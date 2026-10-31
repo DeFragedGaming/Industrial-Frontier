@@ -46,3 +46,11 @@ Desktop.ini
 *.tmp
 *.bak
 *.swp
+
+==========================================
+
+Developer Presence - Excluded for now
+
+==========================================
+
+/tools/DeveloperPresence/

@@ -1,9 +1,9 @@
 
 #pragma once
 
-#include <string>
+#include <SDL3/SDL.h>
 
-struct SDL_Window;
+#include <string>
 
 namespace industrial_frontier
 {
@@ -25,6 +25,10 @@ namespace industrial_frontier
         bool m_running = false;
 
         SDL_Window* m_window = nullptr;
+        SDL_GLContext m_glContext = nullptr;
+
+        int m_viewportWidth = 0;
+        int m_viewportHeight = 0;
 
         std::string m_applicationName = "Industrial Frontier";
     };

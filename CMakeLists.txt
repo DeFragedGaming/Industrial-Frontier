@@ -29,6 +29,8 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(SDL3)
 
+find_package(OpenGL REQUIRED)
+
 add_executable(IndustrialFrontier
     src/main.cpp
     src/core/Application.cpp
@@ -42,6 +44,7 @@ target_include_directories(IndustrialFrontier
 target_link_libraries(IndustrialFrontier
     PRIVATE
         SDL3::SDL3
+        OpenGL::GL
 )
 
 target_compile_definitions(IndustrialFrontier
@@ -69,3 +72,4 @@ endif()
 message(STATUS "Industrial Frontier configuration")
 message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "SDL3 Version: 3.4.18")
+message(STATUS "OpenGL: Enabled")
