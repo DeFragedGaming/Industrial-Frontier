@@ -1,5 +1,6 @@
-
 #include "industrial_frontier/Application.hpp"
+
+#include <SDL3/SDL.h>
 
 #include <iostream>
 
@@ -21,9 +22,34 @@ namespace industrial_frontier
 
         std::cout << "Initializing " << m_applicationName << "...\n";
 
+        if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS))
+        {
+            std::cerr << "SDL initialization failed: "
+                      << SDL_GetError() << '\n';
+
+            return false;
+        }
+
+        m_window = SDL_CreateWindow(
+            m_applicationName.c_str(),
+            1280,
+            720,
+            SDL_WINDOW_RESIZABLE
+        );
+
+        if (m_window == nullptr)
+        {
+            std::cerr << "Window creation failed: "
+                      << SDL_GetError() << '\n';
+
+            SDL_Quit();
+            return false;
+        }
+
         m_initialized = true;
 
-        std::cout << "Application initialized successfully.\n";
+        std::cout << "SDL3 initialized successfully.\n";
+        std::cout << "Window created: 1280x720\n";
 
         return true;
     }
@@ -38,30 +64,46 @@ namespace industrial_frontier
 
         m_running = true;
 
-        std::cout << "\n";
-        std::cout << "========================================\n";
-        std::cout << "          INDUSTRIAL FRONTIER           \n";
-        std::cout << "========================================\n";
-        std::cout << "Native C++20 Application\n";
-        std::cout << "Industrial Simulation Foundation\n";
-        std::cout << "========================================\n";
-        std::cout << "\n";
+        std::cout << "Industrial Frontier is running.\n";
 
-        std::cout << "Application is running.\n";
+        SDL_Event event;
 
-        m_running = false;
+        while (m_running)
+        {
+            while (SDL_PollEvent(&event))
+            {
+                switch (event.type)
+                {
+                    case SDL_EVENT_QUIT:
+                    case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+                        m_running = false;
+                        break;
+
+                    default:
+                        break;
+                }
+            }
+
+            SDL_Delay(1);
+        }
     }
 
     void Application::Shutdown()
     {
-        if (!m_initialized)
+        if (m_window != nullptr)
         {
-            return;
+            SDL_DestroyWindow(m_window);
+            m_window = nullptr;
         }
 
-        std::cout << "Shutting down " << m_applicationName << "...\n";
+        if (m_initialized)
+        {
+            SDL_Quit();
+            m_initialized = false;
+        }
 
-        m_initialized = false;
         m_running = false;
+
+        std::cout << "Industrial Frontier shut down.\n";
     }
 }

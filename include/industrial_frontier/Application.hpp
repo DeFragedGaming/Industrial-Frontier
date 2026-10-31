@@ -3,6 +3,8 @@
 
 #include <string>
 
+struct SDL_Window;
+
 namespace industrial_frontier
 {
     class Application
@@ -21,6 +23,8 @@ namespace industrial_frontier
     private:
         bool m_initialized = false;
         bool m_running = false;
+
+        SDL_Window* m_window = nullptr;
 
         std::string m_applicationName = "Industrial Frontier";
     };
