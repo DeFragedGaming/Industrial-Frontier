@@ -1,3 +1,4 @@
+
 #pragma once
 
 #include <memory>
@@ -14,6 +15,17 @@ namespace industrial_frontier
         Renderer& operator=(const Renderer&) = delete;
 
         bool Initialize();
+
+        void UpdateCamera(
+            float deltaTime,
+            float forwardInput,
+            float rightInput,
+            float verticalInput,
+            bool sprint
+        );
+
+        void RotateCamera(float deltaX, float deltaY);
+
         void Render(int width, int height);
         void Shutdown();
 

@@ -1,8 +1,10 @@
+
 #include "industrial_frontier/Application.hpp"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_opengl.h>
 
+#include <algorithm>
 #include <iostream>
 
 namespace industrial_frontier
@@ -28,25 +30,19 @@ namespace industrial_frontier
         {
             std::cerr << "SDL initialization failed: "
                       << SDL_GetError() << '\n';
-
             return false;
         }
 
-        if (!SDL_GL_SetAttribute(
-                SDL_GL_CONTEXT_MAJOR_VERSION, 3) ||
-            !SDL_GL_SetAttribute(
-                SDL_GL_CONTEXT_MINOR_VERSION, 3) ||
+        if (!SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3) ||
+            !SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3) ||
             !SDL_GL_SetAttribute(
                 SDL_GL_CONTEXT_PROFILE_MASK,
                 SDL_GL_CONTEXT_PROFILE_CORE) ||
-            !SDL_GL_SetAttribute(
-                SDL_GL_DOUBLEBUFFER, 1) ||
-            !SDL_GL_SetAttribute(
-                SDL_GL_DEPTH_SIZE, 24))
+            !SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1) ||
+            !SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24))
         {
             std::cerr << "OpenGL attribute configuration failed: "
                       << SDL_GetError() << '\n';
-
             SDL_Quit();
             return false;
         }
@@ -62,7 +58,6 @@ namespace industrial_frontier
         {
             std::cerr << "Window creation failed: "
                       << SDL_GetError() << '\n';
-
             SDL_Quit();
             return false;
         }
@@ -73,10 +68,8 @@ namespace industrial_frontier
         {
             std::cerr << "OpenGL context creation failed: "
                       << SDL_GetError() << '\n';
-
             SDL_DestroyWindow(m_window);
             m_window = nullptr;
-
             SDL_Quit();
             return false;
         }
@@ -85,7 +78,6 @@ namespace industrial_frontier
         {
             std::cerr << "Could not activate OpenGL context: "
                       << SDL_GetError() << '\n';
-
             Shutdown();
             return false;
         }
@@ -109,12 +101,9 @@ namespace industrial_frontier
         const GLubyte* renderer = glGetString(GL_RENDERER);
 
         std::cout << "SDL3 initialized successfully.\n";
-
         std::cout << "OpenGL context created successfully.\n";
-
         std::cout << "OpenGL Context Version: "
-                  << majorVersion << "."
-                  << minorVersion << '\n';
+                  << majorVersion << "." << minorVersion << '\n';
 
         if (version != nullptr)
         {
@@ -136,36 +125,105 @@ namespace industrial_frontier
             &m_viewportHeight
         );
 
-        glViewport(
-            0,
-            0,
-            m_viewportWidth,
-            m_viewportHeight
-        );
-
+        glViewport(0, 0, m_viewportWidth, m_viewportHeight);
         glEnable(GL_DEPTH_TEST);
-
-        glClearColor(
-            0.025f,
-            0.035f,
-            0.055f,
-            1.0f
-        );
+        glClearColor(0.025f, 0.035f, 0.055f, 1.0f);
 
         if (!m_renderer.Initialize())
         {
             std::cerr << "3D renderer initialization failed.\n";
-
             Shutdown();
             return false;
         }
 
         m_initialized = true;
+        m_lastFrameTime = SDL_GetPerformanceCounter();
 
         std::cout << "Graphics initialization complete.\n";
         std::cout << "3D scene ready.\n";
+        std::cout << "Camera controls enabled.\n";
 
         return true;
+    }
+
+    void Application::SetMouseCapture(bool captured)
+    {
+        if (m_window == nullptr || m_mouseCaptured == captured)
+        {
+            return;
+        }
+
+        if (!SDL_SetWindowRelativeMouseMode(m_window, captured))
+        {
+            std::cerr << "Mouse capture change failed: "
+                      << SDL_GetError() << '\n';
+            return;
+        }
+
+        m_mouseCaptured = captured;
+        m_mouseDeltaX = 0.0f;
+        m_mouseDeltaY = 0.0f;
+
+        if (captured)
+        {
+            std::cout << "Mouse captured. Press Escape to release.\n";
+        }
+        else
+        {
+            std::cout << "Mouse released. Left-click to capture.\n";
+        }
+    }
+
+    void Application::HandleEvent(const SDL_Event& event)
+    {
+        switch (event.type)
+        {
+            case SDL_EVENT_QUIT:
+            case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+                m_running = false;
+                break;
+
+            case SDL_EVENT_KEY_DOWN:
+                if (event.key.scancode == SDL_SCANCODE_ESCAPE &&
+                    !event.key.repeat)
+                {
+                    if (m_mouseCaptured)
+                    {
+                        SetMouseCapture(false);
+                    }
+                    else
+                    {
+                        m_running = false;
+                    }
+                }
+                break;
+
+            case SDL_EVENT_MOUSE_BUTTON_DOWN:
+                if (event.button.button == SDL_BUTTON_LEFT &&
+                    !m_mouseCaptured)
+                {
+                    SetMouseCapture(true);
+                }
+                break;
+
+            case SDL_EVENT_MOUSE_MOTION:
+                if (m_mouseCaptured)
+                {
+                    m_mouseDeltaX += event.motion.xrel;
+                    m_mouseDeltaY += event.motion.yrel;
+                }
+                break;
+
+            case SDL_EVENT_WINDOW_FOCUS_LOST:
+                if (m_mouseCaptured)
+                {
+                    SetMouseCapture(false);
+                }
+                break;
+
+            default:
+                break;
+        }
     }
 
     void Application::Run()
@@ -179,24 +237,68 @@ namespace industrial_frontier
         m_running = true;
 
         std::cout << "Industrial Frontier is running.\n";
+        std::cout << "WASD: Move | Mouse: Look | Shift: Sprint\n";
+        std::cout << "Space: Up | Ctrl: Down | Escape: Release mouse\n";
 
         SDL_Event event;
+
+        const double performanceFrequency =
+            static_cast<double>(SDL_GetPerformanceFrequency());
 
         while (m_running)
         {
             while (SDL_PollEvent(&event))
             {
-                switch (event.type)
-                {
-                    case SDL_EVENT_QUIT:
-                    case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
-                        m_running = false;
-                        break;
-
-                    default:
-                        break;
-                }
+                HandleEvent(event);
             }
+
+            const Uint64 currentTime = SDL_GetPerformanceCounter();
+
+            float deltaTime = static_cast<float>(
+                static_cast<double>(currentTime - m_lastFrameTime) /
+                performanceFrequency
+            );
+
+            m_lastFrameTime = currentTime;
+            deltaTime = std::clamp(deltaTime, 0.0f, 0.1f);
+
+            const bool* keyboardState = SDL_GetKeyboardState(nullptr);
+
+            const float forwardInput =
+                (keyboardState[SDL_SCANCODE_W] ? 1.0f : 0.0f) -
+                (keyboardState[SDL_SCANCODE_S] ? 1.0f : 0.0f);
+
+            const float rightInput =
+                (keyboardState[SDL_SCANCODE_D] ? 1.0f : 0.0f) -
+                (keyboardState[SDL_SCANCODE_A] ? 1.0f : 0.0f);
+
+            const float verticalInput =
+                (keyboardState[SDL_SCANCODE_SPACE] ? 1.0f : 0.0f) -
+                ((keyboardState[SDL_SCANCODE_LCTRL] ||
+                  keyboardState[SDL_SCANCODE_RCTRL]) ? 1.0f : 0.0f);
+
+            const bool sprint =
+                keyboardState[SDL_SCANCODE_LSHIFT] ||
+                keyboardState[SDL_SCANCODE_RSHIFT];
+
+            m_renderer.UpdateCamera(
+                deltaTime,
+                forwardInput,
+                rightInput,
+                verticalInput,
+                sprint
+            );
+
+            if (m_mouseCaptured)
+            {
+                m_renderer.RotateCamera(
+                    m_mouseDeltaX,
+                    m_mouseDeltaY
+                );
+            }
+
+            m_mouseDeltaX = 0.0f;
+            m_mouseDeltaY = 0.0f;
 
             SDL_GetWindowSizeInPixels(
                 m_window,
@@ -204,8 +306,7 @@ namespace industrial_frontier
                 &m_viewportHeight
             );
 
-            if (m_viewportWidth > 0 &&
-                m_viewportHeight > 0)
+            if (m_viewportWidth > 0 && m_viewportHeight > 0)
             {
                 glViewport(
                     0,
@@ -231,6 +332,12 @@ namespace industrial_frontier
 
     void Application::Shutdown()
     {
+        if (m_window != nullptr && m_mouseCaptured)
+        {
+            SDL_SetWindowRelativeMouseMode(m_window, false);
+            m_mouseCaptured = false;
+        }
+
         if (m_glContext != nullptr)
         {
             m_renderer.Shutdown();

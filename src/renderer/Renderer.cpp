@@ -5,6 +5,7 @@
 #include <SDL3/SDL_opengl.h>
 #include <SDL3/SDL_opengl_glext.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -15,6 +16,9 @@ namespace industrial_frontier
 {
     namespace
     {
+        constexpr float Pi = 3.14159265358979323846f;
+        constexpr float DegreesToRadians = Pi / 180.0f;
+
         struct Vertex
         {
             float x, y, z;
@@ -28,13 +32,28 @@ namespace industrial_frontier
 
         using Mat4 = std::array<float, 16>;
 
+        Vec3 Add(Vec3 a, Vec3 b)
+        {
+            return { a.x + b.x, a.y + b.y, a.z + b.z };
+        }
+
         Vec3 Subtract(Vec3 a, Vec3 b)
         {
+            return { a.x - b.x, a.y - b.y, a.z - b.z };
+        }
+
+        Vec3 Scale(Vec3 v, float amount)
+        {
             return {
-                a.x - b.x,
-                a.y - b.y,
-                a.z - b.z
+                v.x * amount,
+                v.y * amount,
+                v.z * amount
             };
+        }
+
+        float Dot(Vec3 a, Vec3 b)
+        {
+            return a.x * b.x + a.y * b.y + a.z * b.z;
         }
 
         Vec3 Cross(Vec3 a, Vec3 b)
@@ -46,11 +65,6 @@ namespace industrial_frontier
             };
         }
 
-        float Dot(Vec3 a, Vec3 b)
-        {
-            return a.x * b.x + a.y * b.y + a.z * b.z;
-        }
-
         Vec3 Normalize(Vec3 v)
         {
             const float length = std::sqrt(Dot(v, v));
@@ -60,11 +74,7 @@ namespace industrial_frontier
                 return { 0.0f, 0.0f, 0.0f };
             }
 
-            return {
-                v.x / length,
-                v.y / length,
-                v.z / length
-            };
+            return Scale(v, 1.0f / length);
         }
 
         Mat4 Multiply(const Mat4& a, const Mat4& b)
@@ -177,21 +187,10 @@ namespace industrial_frontier
             const float groundSize = 10.0f;
             const float groundY = -1.0f;
 
-            const Vec3 groundA{
-                -groundSize, groundY, -groundSize
-            };
-
-            const Vec3 groundB{
-                groundSize, groundY, -groundSize
-            };
-
-            const Vec3 groundC{
-                groundSize, groundY, groundSize
-            };
-
-            const Vec3 groundD{
-                -groundSize, groundY, groundSize
-            };
+            const Vec3 groundA{ -groundSize, groundY, -groundSize };
+            const Vec3 groundB{ groundSize, groundY, -groundSize };
+            const Vec3 groundC{ groundSize, groundY, groundSize };
+            const Vec3 groundD{ -groundSize, groundY, groundSize };
 
             AddQuad(
                 vertices,
@@ -302,6 +301,15 @@ namespace industrial_frontier
         GLsizei groundVertexCount = 6;
         GLsizei cubeVertexCount = 0;
 
+        Vec3 cameraPosition{ 0.0f, 0.0f, 6.0f };
+
+        float cameraYaw = 0.0f;
+        float cameraPitch = 0.0f;
+
+        float movementSpeed = 5.0f;
+        float sprintSpeed = 12.0f;
+        float mouseSensitivity = 0.0025f;
+
         bool LoadFunctions()
         {
 #define LOAD_GL_FUNCTION(member, procType, functionName) \
@@ -359,32 +367,27 @@ namespace industrial_frontier
             return true;
         }
 
-        GLuint CompileShaderObject(
-            GLenum type,
-            const char* source)
+        GLuint CompileShaderObject(GLenum type, const char* source)
         {
             const GLuint shader = CreateShader(type);
+
+            if (shader == 0)
+            {
+                std::cerr << "Could not create shader object.\n";
+                return 0;
+            }
 
             ShaderSource(shader, 1, &source, nullptr);
             CompileShaderFn(shader);
 
             GLint success = GL_FALSE;
 
-            GetShaderiv(
-                shader,
-                GL_COMPILE_STATUS,
-                &success
-            );
+            GetShaderiv(shader, GL_COMPILE_STATUS, &success);
 
             if (success != GL_TRUE)
             {
                 GLint logLength = 0;
-
-                GetShaderiv(
-                    shader,
-                    GL_INFO_LOG_LENGTH,
-                    &logLength
-                );
+                GetShaderiv(shader, GL_INFO_LOG_LENGTH, &logLength);
 
                 std::vector<char> log(
                     static_cast<size_t>(logLength) + 1
@@ -401,7 +404,6 @@ namespace industrial_frontier
                           << log.data() << '\n';
 
                 DeleteShader(shader);
-
                 return 0;
             }
 
@@ -441,10 +443,7 @@ namespace industrial_frontier
             )";
 
             const GLuint vertexShader =
-                CompileShaderObject(
-                    GL_VERTEX_SHADER,
-                    vertexSource
-                );
+                CompileShaderObject(GL_VERTEX_SHADER, vertexSource);
 
             if (vertexShader == 0)
             {
@@ -452,10 +451,7 @@ namespace industrial_frontier
             }
 
             const GLuint fragmentShader =
-                CompileShaderObject(
-                    GL_FRAGMENT_SHADER,
-                    fragmentSource
-                );
+                CompileShaderObject(GL_FRAGMENT_SHADER, fragmentSource);
 
             if (fragmentShader == 0)
             {
@@ -465,31 +461,27 @@ namespace industrial_frontier
 
             shaderProgram = CreateProgram();
 
+            if (shaderProgram == 0)
+            {
+                DeleteShader(vertexShader);
+                DeleteShader(fragmentShader);
+                return false;
+            }
+
             AttachShader(shaderProgram, vertexShader);
             AttachShader(shaderProgram, fragmentShader);
-
             LinkProgram(shaderProgram);
 
             DeleteShader(vertexShader);
             DeleteShader(fragmentShader);
 
             GLint success = GL_FALSE;
-
-            GetProgramiv(
-                shaderProgram,
-                GL_LINK_STATUS,
-                &success
-            );
+            GetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
 
             if (success != GL_TRUE)
             {
                 GLint logLength = 0;
-
-                GetProgramiv(
-                    shaderProgram,
-                    GL_INFO_LOG_LENGTH,
-                    &logLength
-                );
+                GetProgramiv(shaderProgram, GL_INFO_LOG_LENGTH, &logLength);
 
                 std::vector<char> log(
                     static_cast<size_t>(logLength) + 1
@@ -511,27 +503,27 @@ namespace industrial_frontier
                 return false;
             }
 
-            mvpLocation = GetUniformLocation(
-                shaderProgram,
-                "uMVP"
-            );
+            mvpLocation = GetUniformLocation(shaderProgram, "uMVP");
 
-            return true;
+            return mvpLocation >= 0;
         }
 
         bool CreateGeometry()
         {
-            const std::vector<Vertex> vertices =
-                CreateSceneGeometry();
+            const std::vector<Vertex> vertices = CreateSceneGeometry();
 
             groundVertexCount = 6;
-
             cubeVertexCount =
-                static_cast<GLsizei>(vertices.size()) -
-                groundVertexCount;
+                static_cast<GLsizei>(vertices.size()) - groundVertexCount;
 
             GenVertexArrays(1, &vao);
             GenBuffers(1, &vbo);
+
+            if (vao == 0 || vbo == 0)
+            {
+                std::cerr << "Failed to create scene vertex buffers.\n";
+                return false;
+            }
 
             BindVertexArray(vao);
             BindBuffer(GL_ARRAY_BUFFER, vbo);
@@ -553,9 +545,7 @@ namespace industrial_frontier
                 GL_FLOAT,
                 GL_FALSE,
                 sizeof(Vertex),
-                reinterpret_cast<void*>(
-                    offsetof(Vertex, x)
-                )
+                reinterpret_cast<void*>(offsetof(Vertex, x))
             );
 
             EnableVertexAttribArray(1);
@@ -566,15 +556,33 @@ namespace industrial_frontier
                 GL_FLOAT,
                 GL_FALSE,
                 sizeof(Vertex),
-                reinterpret_cast<void*>(
-                    offsetof(Vertex, r)
-                )
+                reinterpret_cast<void*>(offsetof(Vertex, r))
             );
 
             BindBuffer(GL_ARRAY_BUFFER, 0);
             BindVertexArray(0);
 
             return true;
+        }
+
+        Vec3 GetForwardDirection() const
+        {
+            const float cosPitch = std::cos(cameraPitch);
+
+            return Normalize({
+                std::sin(cameraYaw) * cosPitch,
+                std::sin(cameraPitch),
+                -std::cos(cameraYaw) * cosPitch
+            });
+        }
+
+        Vec3 GetRightDirection() const
+        {
+            return Normalize({
+                std::cos(cameraYaw),
+                0.0f,
+                std::sin(cameraYaw)
+            });
         }
     };
 
@@ -607,8 +615,66 @@ namespace industrial_frontier
 
         std::cout << "3D renderer initialized successfully.\n";
         std::cout << "Ground plane and cube geometry created.\n";
+        std::cout << "First-person free-fly camera initialized.\n";
 
         return true;
+    }
+
+    void Renderer::UpdateCamera(
+        float deltaTime,
+        float forwardInput,
+        float rightInput,
+        float verticalInput,
+        bool sprint)
+    {
+        if (deltaTime <= 0.0f)
+        {
+            return;
+        }
+
+        Vec3 movement{ 0.0f, 0.0f, 0.0f };
+
+        movement = Add(
+            movement,
+            Scale(m_impl->GetForwardDirection(), forwardInput)
+        );
+
+        movement = Add(
+            movement,
+            Scale(m_impl->GetRightDirection(), rightInput)
+        );
+
+        movement.y += verticalInput;
+
+        const float movementLength = std::sqrt(Dot(movement, movement));
+
+        if (movementLength > 1.0f)
+        {
+            movement = Scale(movement, 1.0f / movementLength);
+        }
+
+        const float speed = sprint
+            ? m_impl->sprintSpeed
+            : m_impl->movementSpeed;
+
+        m_impl->cameraPosition = Add(
+            m_impl->cameraPosition,
+            Scale(movement, speed * deltaTime)
+        );
+    }
+
+    void Renderer::RotateCamera(float deltaX, float deltaY)
+    {
+        m_impl->cameraYaw += deltaX * m_impl->mouseSensitivity;
+        m_impl->cameraPitch -= deltaY * m_impl->mouseSensitivity;
+
+        const float pitchLimit = 89.0f * DegreesToRadians;
+
+        m_impl->cameraPitch = std::clamp(
+            m_impl->cameraPitch,
+            -pitchLimit,
+            pitchLimit
+        );
     }
 
     void Renderer::Render(int width, int height)
@@ -629,12 +695,14 @@ namespace industrial_frontier
             0.785398163f,
             aspect,
             0.1f,
-            100.0f
+            200.0f
         );
 
+        const Vec3 forward = m_impl->GetForwardDirection();
+
         const Mat4 view = LookAt(
-            { 4.0f, 3.0f, 6.0f },
-            { 0.0f, 0.0f, 0.0f },
+            m_impl->cameraPosition,
+            Add(m_impl->cameraPosition, forward),
             { 0.0f, 1.0f, 0.0f }
         );
 
@@ -674,15 +742,13 @@ namespace industrial_frontier
             return;
         }
 
-        if (m_impl->DeleteBuffers != nullptr &&
-            m_impl->vbo != 0)
+        if (m_impl->DeleteBuffers != nullptr && m_impl->vbo != 0)
         {
             m_impl->DeleteBuffers(1, &m_impl->vbo);
             m_impl->vbo = 0;
         }
 
-        if (m_impl->DeleteVertexArrays != nullptr &&
-            m_impl->vao != 0)
+        if (m_impl->DeleteVertexArrays != nullptr && m_impl->vao != 0)
         {
             m_impl->DeleteVertexArrays(1, &m_impl->vao);
             m_impl->vao = 0;
