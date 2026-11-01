@@ -1,5 +1,6 @@
-
 #pragma once
+
+#include "industrial_frontier/renderer/Renderer.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -31,5 +32,7 @@ namespace industrial_frontier
         int m_viewportHeight = 0;
 
         std::string m_applicationName = "Industrial Frontier";
+
+        Renderer m_renderer;
     };
 }

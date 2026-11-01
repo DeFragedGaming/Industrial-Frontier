@@ -1,4 +1,3 @@
-
 cmake_minimum_required(VERSION 3.25)
 
 project(IndustrialFrontier
@@ -34,6 +33,7 @@ find_package(OpenGL REQUIRED)
 add_executable(IndustrialFrontier
     src/main.cpp
     src/core/Application.cpp
+    src/renderer/Renderer.cpp
 )
 
 target_include_directories(IndustrialFrontier
@@ -73,3 +73,4 @@ message(STATUS "Industrial Frontier configuration")
 message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "SDL3 Version: 3.4.18")
 message(STATUS "OpenGL: Enabled")
+message(STATUS "3D Renderer: Enabled")

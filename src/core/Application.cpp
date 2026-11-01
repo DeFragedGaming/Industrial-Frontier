@@ -1,4 +1,3 @@
-
 #include "industrial_frontier/Application.hpp"
 
 #include <SDL3/SDL.h>
@@ -22,7 +21,8 @@ namespace industrial_frontier
             return true;
         }
 
-        std::cout << "Initializing " << m_applicationName << "...\n";
+        std::cout << "Initializing "
+                  << m_applicationName << "...\n";
 
         if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS))
         {
@@ -32,12 +32,17 @@ namespace industrial_frontier
             return false;
         }
 
-        if (!SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3) ||
-            !SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3) ||
-            !SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,
-                                 SDL_GL_CONTEXT_PROFILE_CORE) ||
-            !SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1) ||
-            !SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24))
+        if (!SDL_GL_SetAttribute(
+                SDL_GL_CONTEXT_MAJOR_VERSION, 3) ||
+            !SDL_GL_SetAttribute(
+                SDL_GL_CONTEXT_MINOR_VERSION, 3) ||
+            !SDL_GL_SetAttribute(
+                SDL_GL_CONTEXT_PROFILE_MASK,
+                SDL_GL_CONTEXT_PROFILE_CORE) ||
+            !SDL_GL_SetAttribute(
+                SDL_GL_DOUBLEBUFFER, 1) ||
+            !SDL_GL_SetAttribute(
+                SDL_GL_DEPTH_SIZE, 24))
         {
             std::cerr << "OpenGL attribute configuration failed: "
                       << SDL_GetError() << '\n';
@@ -104,21 +109,25 @@ namespace industrial_frontier
         const GLubyte* renderer = glGetString(GL_RENDERER);
 
         std::cout << "SDL3 initialized successfully.\n";
+
         std::cout << "OpenGL context created successfully.\n";
-        std::cout << "Requested OpenGL: 3.3 Core Profile\n";
+
         std::cout << "OpenGL Context Version: "
-                  << majorVersion << "." << minorVersion << '\n';
+                  << majorVersion << "."
+                  << minorVersion << '\n';
 
         if (version != nullptr)
         {
             std::cout << "OpenGL Driver Version: "
-                      << reinterpret_cast<const char*>(version) << '\n';
+                      << reinterpret_cast<const char*>(version)
+                      << '\n';
         }
 
         if (renderer != nullptr)
         {
             std::cout << "Graphics Renderer: "
-                      << reinterpret_cast<const char*>(renderer) << '\n';
+                      << reinterpret_cast<const char*>(renderer)
+                      << '\n';
         }
 
         SDL_GetWindowSizeInPixels(
@@ -143,10 +152,18 @@ namespace industrial_frontier
             1.0f
         );
 
+        if (!m_renderer.Initialize())
+        {
+            std::cerr << "3D renderer initialization failed.\n";
+
+            Shutdown();
+            return false;
+        }
+
         m_initialized = true;
 
         std::cout << "Graphics initialization complete.\n";
-        std::cout << "Window created: 1280x720\n";
+        std::cout << "3D scene ready.\n";
 
         return true;
     }
@@ -181,35 +198,34 @@ namespace industrial_frontier
                 }
             }
 
-            int width = 0;
-            int height = 0;
-
             SDL_GetWindowSizeInPixels(
                 m_window,
-                &width,
-                &height
+                &m_viewportWidth,
+                &m_viewportHeight
             );
 
-            if (width != m_viewportWidth ||
-                height != m_viewportHeight)
+            if (m_viewportWidth > 0 &&
+                m_viewportHeight > 0)
             {
-                m_viewportWidth = width;
-                m_viewportHeight = height;
-
                 glViewport(
                     0,
                     0,
                     m_viewportWidth,
                     m_viewportHeight
                 );
+
+                glClear(
+                    GL_COLOR_BUFFER_BIT |
+                    GL_DEPTH_BUFFER_BIT
+                );
+
+                m_renderer.Render(
+                    m_viewportWidth,
+                    m_viewportHeight
+                );
+
+                SDL_GL_SwapWindow(m_window);
             }
-
-            glClear(
-                GL_COLOR_BUFFER_BIT |
-                GL_DEPTH_BUFFER_BIT
-            );
-
-            SDL_GL_SwapWindow(m_window);
         }
     }
 
@@ -217,6 +233,8 @@ namespace industrial_frontier
     {
         if (m_glContext != nullptr)
         {
+            m_renderer.Shutdown();
+
             SDL_GL_DestroyContext(m_glContext);
             m_glContext = nullptr;
         }
@@ -227,12 +245,12 @@ namespace industrial_frontier
             m_window = nullptr;
         }
 
-        if (m_initialized)
+        if (SDL_WasInit(0) != 0)
         {
             SDL_Quit();
-            m_initialized = false;
         }
 
+        m_initialized = false;
         m_running = false;
 
         std::cout << "Industrial Frontier shut down.\n";
