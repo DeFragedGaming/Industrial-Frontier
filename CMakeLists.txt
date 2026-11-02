@@ -34,6 +34,7 @@ add_executable(IndustrialFrontier
     src/main.cpp
     src/core/Application.cpp
     src/renderer/Renderer.cpp
+    src/renderer/Shader.cpp
     src/world/TerrainGenerator.cpp
     src/world/TerrainChunk.cpp
     src/world/TerrainWorld.cpp
@@ -72,9 +73,17 @@ if(WIN32)
     )
 endif()
 
+add_custom_command(TARGET IndustrialFrontier POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${PROJECT_SOURCE_DIR}/assets
+        $<TARGET_FILE_DIR:IndustrialFrontier>/assets
+)
+
 message(STATUS "Industrial Frontier configuration")
 message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "SDL3 Version: 3.4.18")
 message(STATUS "OpenGL: Enabled")
+message(STATUS "Shader System: Enabled")
+message(STATUS "Lighting Shaders: Enabled")
 message(STATUS "3D Renderer: Enabled")
 message(STATUS "Procedural Terrain: Enabled")
