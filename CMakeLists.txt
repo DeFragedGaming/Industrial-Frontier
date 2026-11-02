@@ -34,6 +34,9 @@ add_executable(IndustrialFrontier
     src/main.cpp
     src/core/Application.cpp
     src/renderer/Renderer.cpp
+    src/world/TerrainGenerator.cpp
+    src/world/TerrainChunk.cpp
+    src/world/TerrainWorld.cpp
 )
 
 target_include_directories(IndustrialFrontier
@@ -74,3 +77,4 @@ message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "SDL3 Version: 3.4.18")
 message(STATUS "OpenGL: Enabled")
 message(STATUS "3D Renderer: Enabled")
+message(STATUS "Procedural Terrain: Enabled")

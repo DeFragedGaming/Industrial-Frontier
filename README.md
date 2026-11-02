@@ -10,6 +10,8 @@ The goal is to create an explorable world where players can discover resources, 
 
 ![Industrial Frontier - Free Fly Camera Preview](assets/Videos/FreFlyCam.gif)
 
+![Industrial Frontier - Terrain Starter](assets/Pics/TerrainBase.png)
+
 *Early development footage — free-fly camera prototype.*
 
 ## Project Overview

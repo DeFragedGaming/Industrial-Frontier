@@ -1,5 +1,6 @@
 
 #include "industrial_frontier/renderer/Renderer.hpp"
+#include "industrial_frontier/world/TerrainWorld.hpp"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_opengl.h>
@@ -10,6 +11,8 @@
 #include <cmath>
 #include <cstddef>
 #include <iostream>
+#include <limits>
+#include <memory>
 #include <vector>
 
 namespace industrial_frontier
@@ -19,15 +22,18 @@ namespace industrial_frontier
         constexpr float Pi = 3.14159265358979323846f;
         constexpr float DegreesToRadians = Pi / 180.0f;
 
-        struct Vertex
-        {
-            float x, y, z;
-            float r, g, b;
-        };
+        using DrawElementsProc = void (APIENTRY*)(
+            GLenum,
+            GLsizei,
+            GLenum,
+            const void*
+        );
 
         struct Vec3
         {
-            float x, y, z;
+            float x;
+            float y;
+            float z;
         };
 
         using Mat4 = std::array<float, 16>;
@@ -100,7 +106,8 @@ namespace industrial_frontier
             float fov,
             float aspect,
             float nearPlane,
-            float farPlane)
+            float farPlane
+        )
         {
             Mat4 result{};
 
@@ -144,112 +151,6 @@ namespace industrial_frontier
 
             return result;
         }
-
-        void AddTriangle(
-            std::vector<Vertex>& vertices,
-            Vec3 a,
-            Vec3 b,
-            Vec3 c,
-            const std::array<float, 3>& color)
-        {
-            vertices.push_back({
-                a.x, a.y, a.z,
-                color[0], color[1], color[2]
-            });
-
-            vertices.push_back({
-                b.x, b.y, b.z,
-                color[0], color[1], color[2]
-            });
-
-            vertices.push_back({
-                c.x, c.y, c.z,
-                color[0], color[1], color[2]
-            });
-        }
-
-        void AddQuad(
-            std::vector<Vertex>& vertices,
-            Vec3 a,
-            Vec3 b,
-            Vec3 c,
-            Vec3 d,
-            const std::array<float, 3>& color)
-        {
-            AddTriangle(vertices, a, b, c, color);
-            AddTriangle(vertices, a, c, d, color);
-        }
-
-        std::vector<Vertex> CreateSceneGeometry()
-        {
-            std::vector<Vertex> vertices;
-
-            const float groundSize = 10.0f;
-            const float groundY = -1.0f;
-
-            const Vec3 groundA{ -groundSize, groundY, -groundSize };
-            const Vec3 groundB{ groundSize, groundY, -groundSize };
-            const Vec3 groundC{ groundSize, groundY, groundSize };
-            const Vec3 groundD{ -groundSize, groundY, groundSize };
-
-            AddQuad(
-                vertices,
-                groundA,
-                groundD,
-                groundC,
-                groundB,
-                { 0.28f, 0.32f, 0.35f }
-            );
-
-            const float s = 1.0f;
-
-            const Vec3 p000{ -s, -s, -s };
-            const Vec3 p001{ -s, -s, s };
-            const Vec3 p010{ -s, s, -s };
-            const Vec3 p011{ -s, s, s };
-            const Vec3 p100{ s, -s, -s };
-            const Vec3 p101{ s, -s, s };
-            const Vec3 p110{ s, s, -s };
-            const Vec3 p111{ s, s, s };
-
-            AddQuad(
-                vertices,
-                p001, p101, p111, p011,
-                { 0.85f, 0.28f, 0.12f }
-            );
-
-            AddQuad(
-                vertices,
-                p100, p000, p010, p110,
-                { 0.65f, 0.18f, 0.08f }
-            );
-
-            AddQuad(
-                vertices,
-                p000, p001, p011, p010,
-                { 0.72f, 0.22f, 0.10f }
-            );
-
-            AddQuad(
-                vertices,
-                p101, p100, p110, p111,
-                { 0.95f, 0.38f, 0.16f }
-            );
-
-            AddQuad(
-                vertices,
-                p010, p011, p111, p110,
-                { 1.0f, 0.48f, 0.20f }
-            );
-
-            AddQuad(
-                vertices,
-                p000, p100, p101, p001,
-                { 0.55f, 0.15f, 0.06f }
-            );
-
-            return vertices;
-        }
     }
 
     struct Renderer::Impl
@@ -284,27 +185,26 @@ namespace industrial_frontier
         PFNGLENABLEVERTEXATTRIBARRAYPROC EnableVertexAttribArray = nullptr;
         PFNGLVERTEXATTRIBPOINTERPROC VertexAttribPointer = nullptr;
 
-        using DrawArraysFunction = void (APIENTRYP)(
-            GLenum mode,
-            GLint first,
-            GLsizei count
-        );
+        DrawElementsProc DrawElements = nullptr;
 
-        DrawArraysFunction DrawArrays = nullptr;
+        struct GpuTerrainChunk
+        {
+            GLuint vao = 0;
+            GLuint vbo = 0;
+            GLuint ebo = 0;
+            GLsizei indexCount = 0;
+        };
 
-        GLuint vao = 0;
-        GLuint vbo = 0;
         GLuint shaderProgram = 0;
-
         GLint mvpLocation = -1;
 
-        GLsizei groundVertexCount = 6;
-        GLsizei cubeVertexCount = 0;
+        TerrainWorld terrainWorld;
+        std::vector<GpuTerrainChunk> gpuChunks;
 
-        Vec3 cameraPosition{ 0.0f, 0.0f, 6.0f };
+        Vec3 cameraPosition{ 0.0f, 25.0f, 70.0f };
 
         float cameraYaw = 0.0f;
-        float cameraPitch = 0.0f;
+        float cameraPitch = -0.20f;
 
         float movementSpeed = 5.0f;
         float sprintSpeed = 12.0f;
@@ -351,18 +251,9 @@ namespace industrial_frontier
 
             LOAD_GL_FUNCTION(EnableVertexAttribArray, PFNGLENABLEVERTEXATTRIBARRAYPROC, "glEnableVertexAttribArray")
             LOAD_GL_FUNCTION(VertexAttribPointer, PFNGLVERTEXATTRIBPOINTERPROC, "glVertexAttribPointer")
+            LOAD_GL_FUNCTION(DrawElements, DrawElementsProc, "glDrawElements")
 
 #undef LOAD_GL_FUNCTION
-
-            DrawArrays = reinterpret_cast<DrawArraysFunction>(
-                SDL_GL_GetProcAddress("glDrawArrays")
-            );
-
-            if (DrawArrays == nullptr)
-            {
-                std::cerr << "Failed to load OpenGL function: glDrawArrays\n";
-                return false;
-            }
 
             return true;
         }
@@ -381,7 +272,6 @@ namespace industrial_frontier
             CompileShaderFn(shader);
 
             GLint success = GL_FALSE;
-
             GetShaderiv(shader, GL_COMPILE_STATUS, &success);
 
             if (success != GL_TRUE)
@@ -390,7 +280,7 @@ namespace industrial_frontier
                 GetShaderiv(shader, GL_INFO_LOG_LENGTH, &logLength);
 
                 std::vector<char> log(
-                    static_cast<size_t>(logLength) + 1
+                    static_cast<std::size_t>(std::max(logLength, 1)) + 1
                 );
 
                 GetShaderInfoLog(
@@ -416,16 +306,19 @@ namespace industrial_frontier
                 #version 330 core
 
                 layout (location = 0) in vec3 aPosition;
-                layout (location = 1) in vec3 aColor;
+                layout (location = 1) in vec3 aNormal;
+                layout (location = 2) in vec3 aColor;
 
                 uniform mat4 uMVP;
 
                 out vec3 vertexColor;
+                out vec3 vertexNormal;
 
                 void main()
                 {
                     gl_Position = uMVP * vec4(aPosition, 1.0);
                     vertexColor = aColor;
+                    vertexNormal = aNormal;
                 }
             )";
 
@@ -433,12 +326,19 @@ namespace industrial_frontier
                 #version 330 core
 
                 in vec3 vertexColor;
+                in vec3 vertexNormal;
 
                 out vec4 FragColor;
 
                 void main()
                 {
-                    FragColor = vec4(vertexColor, 1.0);
+                    vec3 normal = normalize(vertexNormal);
+                    vec3 lightDirection = normalize(vec3(-0.4, 1.0, -0.3));
+
+                    float diffuse = max(dot(normal, lightDirection), 0.0);
+                    float lighting = 0.38 + diffuse * 0.62;
+
+                    FragColor = vec4(vertexColor * lighting, 1.0);
                 }
             )";
 
@@ -484,7 +384,7 @@ namespace industrial_frontier
                 GetProgramiv(shaderProgram, GL_INFO_LOG_LENGTH, &logLength);
 
                 std::vector<char> log(
-                    static_cast<size_t>(logLength) + 1
+                    static_cast<std::size_t>(std::max(logLength, 1)) + 1
                 );
 
                 GetProgramInfoLog(
@@ -503,66 +403,218 @@ namespace industrial_frontier
                 return false;
             }
 
-            mvpLocation = GetUniformLocation(shaderProgram, "uMVP");
+            mvpLocation =
+                GetUniformLocation(shaderProgram, "uMVP");
 
             return mvpLocation >= 0;
         }
 
-        bool CreateGeometry()
+        void DeleteGpuChunk(GpuTerrainChunk& chunk)
         {
-            const std::vector<Vertex> vertices = CreateSceneGeometry();
-
-            groundVertexCount = 6;
-            cubeVertexCount =
-                static_cast<GLsizei>(vertices.size()) - groundVertexCount;
-
-            GenVertexArrays(1, &vao);
-            GenBuffers(1, &vbo);
-
-            if (vao == 0 || vbo == 0)
+            if (chunk.ebo != 0 && DeleteBuffers != nullptr)
             {
-                std::cerr << "Failed to create scene vertex buffers.\n";
+                DeleteBuffers(1, &chunk.ebo);
+                chunk.ebo = 0;
+            }
+
+            if (chunk.vbo != 0 && DeleteBuffers != nullptr)
+            {
+                DeleteBuffers(1, &chunk.vbo);
+                chunk.vbo = 0;
+            }
+
+            if (chunk.vao != 0 && DeleteVertexArrays != nullptr)
+            {
+                DeleteVertexArrays(1, &chunk.vao);
+                chunk.vao = 0;
+            }
+
+            chunk.indexCount = 0;
+        }
+
+        bool UploadTerrainChunk(const TerrainChunk& chunk)
+        {
+            const auto& vertices = chunk.GetVertices();
+            const auto& indices = chunk.GetIndices();
+
+            if (vertices.empty() || indices.empty())
+            {
                 return false;
             }
 
-            BindVertexArray(vao);
-            BindBuffer(GL_ARRAY_BUFFER, vbo);
+            if (indices.size() >
+                static_cast<std::size_t>(
+                    std::numeric_limits<GLsizei>::max()
+                ))
+            {
+                std::cerr << "Terrain chunk has too many indices.\n";
+                return false;
+            }
+
+            if (vertices.size() >
+                static_cast<std::size_t>(
+                    std::numeric_limits<GLsizeiptr>::max() /
+                    static_cast<GLsizeiptr>(sizeof(TerrainVertex))
+                ))
+            {
+                std::cerr << "Terrain chunk vertex buffer is too large.\n";
+                return false;
+            }
+
+            if (indices.size() >
+                static_cast<std::size_t>(
+                    std::numeric_limits<GLsizeiptr>::max() /
+                    static_cast<GLsizeiptr>(sizeof(unsigned int))
+                ))
+            {
+                std::cerr << "Terrain chunk index buffer is too large.\n";
+                return false;
+            }
+
+            GpuTerrainChunk gpuChunk{};
+
+            GenVertexArrays(1, &gpuChunk.vao);
+            GenBuffers(1, &gpuChunk.vbo);
+            GenBuffers(1, &gpuChunk.ebo);
+
+            if (gpuChunk.vao == 0 ||
+                gpuChunk.vbo == 0 ||
+                gpuChunk.ebo == 0)
+            {
+                std::cerr << "Failed to create terrain GPU buffers.\n";
+
+                DeleteGpuChunk(gpuChunk);
+                return false;
+            }
+
+            BindVertexArray(gpuChunk.vao);
+
+            BindBuffer(GL_ARRAY_BUFFER, gpuChunk.vbo);
 
             BufferData(
                 GL_ARRAY_BUFFER,
                 static_cast<GLsizeiptr>(
-                    vertices.size() * sizeof(Vertex)
+                    vertices.size() * sizeof(TerrainVertex)
                 ),
                 vertices.data(),
                 GL_STATIC_DRAW
             );
 
-            EnableVertexAttribArray(0);
+            BindBuffer(GL_ELEMENT_ARRAY_BUFFER, gpuChunk.ebo);
 
+            BufferData(
+                GL_ELEMENT_ARRAY_BUFFER,
+                static_cast<GLsizeiptr>(
+                    indices.size() * sizeof(unsigned int)
+                ),
+                indices.data(),
+                GL_STATIC_DRAW
+            );
+
+            EnableVertexAttribArray(0);
             VertexAttribPointer(
                 0,
                 3,
                 GL_FLOAT,
                 GL_FALSE,
-                sizeof(Vertex),
-                reinterpret_cast<void*>(offsetof(Vertex, x))
+                sizeof(TerrainVertex),
+                reinterpret_cast<void*>(
+                    offsetof(TerrainVertex, position)
+                )
             );
 
             EnableVertexAttribArray(1);
-
             VertexAttribPointer(
                 1,
                 3,
                 GL_FLOAT,
                 GL_FALSE,
-                sizeof(Vertex),
-                reinterpret_cast<void*>(offsetof(Vertex, r))
+                sizeof(TerrainVertex),
+                reinterpret_cast<void*>(
+                    offsetof(TerrainVertex, normal)
+                )
             );
 
-            BindBuffer(GL_ARRAY_BUFFER, 0);
+            EnableVertexAttribArray(2);
+            VertexAttribPointer(
+                2,
+                3,
+                GL_FLOAT,
+                GL_FALSE,
+                sizeof(TerrainVertex),
+                reinterpret_cast<void*>(
+                    offsetof(TerrainVertex, color)
+                )
+            );
+
             BindVertexArray(0);
+            BindBuffer(GL_ARRAY_BUFFER, 0);
+
+            gpuChunk.indexCount =
+                static_cast<GLsizei>(indices.size());
+
+            gpuChunks.push_back(gpuChunk);
 
             return true;
+        }
+
+        bool CreateTerrain()
+        {
+            TerrainSettings settings;
+
+            settings.seed = 12345;
+            settings.heightScale = 35.0f;
+            settings.baseHeight = -5.0f;
+            settings.continentalScale = 0.0015f;
+            settings.mountainScale = 0.003f;
+            settings.detailScale = 0.012f;
+            settings.noiseOctaves = 5;
+            settings.persistence = 0.5f;
+            settings.lacunarity = 2.0f;
+            settings.mountainStrength = 1.0f;
+            settings.valleyStrength = 0.65f;
+
+            terrainWorld = TerrainWorld(
+                settings,
+                32.0f,
+                1.0f
+            );
+
+            constexpr int initialChunkRadius = 4;
+
+            std::cout << "Generating terrain chunks...\n";
+
+            if (!terrainWorld.GenerateWorld(initialChunkRadius))
+            {
+                std::cerr << "Failed to generate terrain world.\n";
+                return false;
+            }
+
+            gpuChunks.reserve(
+                static_cast<std::size_t>(terrainWorld.GetChunkCount())
+            );
+
+            for (const auto& entry : terrainWorld.GetChunks())
+            {
+                if (!UploadTerrainChunk(entry.second))
+                {
+                    std::cerr << "Failed to upload terrain chunk at "
+                              << entry.second.GetChunkX() << ", "
+                              << entry.second.GetChunkZ() << ".\n";
+
+                    return false;
+                }
+            }
+
+            std::cout << "Generated "
+                      << terrainWorld.GetChunkCount()
+                      << " terrain chunks.\n";
+
+            std::cout << "Uploaded "
+                      << gpuChunks.size()
+                      << " terrain meshes to OpenGL.\n";
+
+            return !gpuChunks.empty();
         }
 
         Vec3 GetForwardDirection() const
@@ -583,6 +635,17 @@ namespace industrial_frontier
                 0.0f,
                 std::sin(cameraYaw)
             });
+        }
+
+        void ReleaseTerrain()
+        {
+            for (GpuTerrainChunk& chunk : gpuChunks)
+            {
+                DeleteGpuChunk(chunk);
+            }
+
+            gpuChunks.clear();
+            terrainWorld.Clear();
         }
     };
 
@@ -608,13 +671,16 @@ namespace industrial_frontier
             return false;
         }
 
-        if (!m_impl->CreateGeometry())
+        glEnable(GL_DEPTH_TEST);
+        glDisable(GL_CULL_FACE);
+
+        if (!m_impl->CreateTerrain())
         {
             return false;
         }
 
-        std::cout << "3D renderer initialized successfully.\n";
-        std::cout << "Ground plane and cube geometry created.\n";
+        std::cout << "3D terrain renderer initialized successfully.\n";
+        std::cout << "Smooth procedural terrain enabled.\n";
         std::cout << "First-person free-fly camera initialized.\n";
 
         return true;
@@ -625,7 +691,8 @@ namespace industrial_frontier
         float forwardInput,
         float rightInput,
         float verticalInput,
-        bool sprint)
+        bool sprint
+    )
     {
         if (deltaTime <= 0.0f)
         {
@@ -646,7 +713,8 @@ namespace industrial_frontier
 
         movement.y += verticalInput;
 
-        const float movementLength = std::sqrt(Dot(movement, movement));
+        const float movementLength =
+            std::sqrt(Dot(movement, movement));
 
         if (movementLength > 1.0f)
         {
@@ -665,10 +733,14 @@ namespace industrial_frontier
 
     void Renderer::RotateCamera(float deltaX, float deltaY)
     {
-        m_impl->cameraYaw += deltaX * m_impl->mouseSensitivity;
-        m_impl->cameraPitch -= deltaY * m_impl->mouseSensitivity;
+        m_impl->cameraYaw +=
+            deltaX * m_impl->mouseSensitivity;
 
-        const float pitchLimit = 89.0f * DegreesToRadians;
+        m_impl->cameraPitch -=
+            deltaY * m_impl->mouseSensitivity;
+
+        const float pitchLimit =
+            89.0f * DegreesToRadians;
 
         m_impl->cameraPitch = std::clamp(
             m_impl->cameraPitch,
@@ -682,7 +754,7 @@ namespace industrial_frontier
         if (width <= 0 ||
             height <= 0 ||
             m_impl->shaderProgram == 0 ||
-            m_impl->vao == 0)
+            m_impl->gpuChunks.empty())
         {
             return;
         }
@@ -695,10 +767,11 @@ namespace industrial_frontier
             0.785398163f,
             aspect,
             0.1f,
-            200.0f
+            1000.0f
         );
 
-        const Vec3 forward = m_impl->GetForwardDirection();
+        const Vec3 forward =
+            m_impl->GetForwardDirection();
 
         const Mat4 view = LookAt(
             m_impl->cameraPosition,
@@ -717,19 +790,23 @@ namespace industrial_frontier
             mvp.data()
         );
 
-        m_impl->BindVertexArray(m_impl->vao);
+        for (const Impl::GpuTerrainChunk& chunk :
+             m_impl->gpuChunks)
+        {
+            if (chunk.vao == 0 || chunk.indexCount <= 0)
+            {
+                continue;
+            }
 
-        m_impl->DrawArrays(
-            GL_TRIANGLES,
-            0,
-            m_impl->groundVertexCount
-        );
+            m_impl->BindVertexArray(chunk.vao);
 
-        m_impl->DrawArrays(
-            GL_TRIANGLES,
-            m_impl->groundVertexCount,
-            m_impl->cubeVertexCount
-        );
+            m_impl->DrawElements(
+                GL_TRIANGLES,
+                chunk.indexCount,
+                GL_UNSIGNED_INT,
+                nullptr
+            );
+        }
 
         m_impl->BindVertexArray(0);
         m_impl->UseProgram(0);
@@ -742,17 +819,7 @@ namespace industrial_frontier
             return;
         }
 
-        if (m_impl->DeleteBuffers != nullptr && m_impl->vbo != 0)
-        {
-            m_impl->DeleteBuffers(1, &m_impl->vbo);
-            m_impl->vbo = 0;
-        }
-
-        if (m_impl->DeleteVertexArrays != nullptr && m_impl->vao != 0)
-        {
-            m_impl->DeleteVertexArrays(1, &m_impl->vao);
-            m_impl->vao = 0;
-        }
+        m_impl->ReleaseTerrain();
 
         if (m_impl->DeleteProgram != nullptr &&
             m_impl->shaderProgram != 0)
