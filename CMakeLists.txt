@@ -38,6 +38,7 @@ add_executable(IndustrialFrontier
     src/world/TerrainGenerator.cpp
     src/world/TerrainChunk.cpp
     src/world/TerrainWorld.cpp
+    src/world/TerrainGenerationWorker.cpp
 )
 
 target_include_directories(IndustrialFrontier

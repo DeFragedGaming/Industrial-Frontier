@@ -2,6 +2,7 @@
 
 #include "industrial_frontier/renderer/Shader.hpp"
 #include "industrial_frontier/world/TerrainWorld.hpp"
+#include "industrial_frontier/world/TerrainGenerationWorker.hpp"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_opengl.h>
@@ -9,9 +10,11 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <iostream>
 #include <memory>
 #include <unordered_map>
+#include <vector>
 
 namespace industrial_frontier
 {
@@ -19,6 +22,10 @@ namespace industrial_frontier
     {
         constexpr float Pi = 3.14159265358979323846f;
         constexpr float DegreesToRadians = Pi / 180.0f;
+
+        constexpr int LoadRadius = 5;
+        constexpr int UnloadRadius = 6;
+        constexpr int MaxUploadsPerFrame = 2;
 
         struct Vec3
         {
@@ -89,10 +96,7 @@ namespace industrial_frontier
             return result;
         }
 
-        Mat4 MultiplyMatrices(
-            const Mat4& a,
-            const Mat4& b
-        )
+        Mat4 MultiplyMatrices(const Mat4& a, const Mat4& b)
         {
             Mat4 result{};
 
@@ -116,14 +120,11 @@ namespace industrial_frontier
             float fieldOfView,
             float aspectRatio,
             float nearPlane,
-            float farPlane
-        )
+            float farPlane)
         {
             Mat4 result{};
 
-            const float tangent = std::tan(
-                fieldOfView * 0.5f
-            );
+            const float tangent = std::tan(fieldOfView * 0.5f);
 
             if (aspectRatio <= 0.0f || tangent <= 0.0f)
             {
@@ -132,15 +133,10 @@ namespace industrial_frontier
 
             result.values[0] = 1.0f / (aspectRatio * tangent);
             result.values[5] = 1.0f / tangent;
-
-            result.values[10] =
-                -(farPlane + nearPlane) /
+            result.values[10] = -(farPlane + nearPlane) /
                 (farPlane - nearPlane);
-
             result.values[11] = -1.0f;
-
-            result.values[14] =
-                -(2.0f * farPlane * nearPlane) /
+            result.values[14] = -(2.0f * farPlane * nearPlane) /
                 (farPlane - nearPlane);
 
             return result;
@@ -149,17 +145,10 @@ namespace industrial_frontier
         Mat4 LookAt(
             const Vec3& position,
             const Vec3& target,
-            const Vec3& worldUp
-        )
+            const Vec3& worldUp)
         {
-            const Vec3 forward = Normalize(
-                Subtract(target, position)
-            );
-
-            const Vec3 right = Normalize(
-                Cross(forward, worldUp)
-            );
-
+            const Vec3 forward = Normalize(Subtract(target, position));
+            const Vec3 right = Normalize(Cross(forward, worldUp));
             const Vec3 up = Cross(right, forward);
 
             Mat4 result = Identity();
@@ -183,35 +172,16 @@ namespace industrial_frontier
             return result;
         }
 
-        using GenVertexArraysProc =
-            void(APIENTRY*)(GLsizei, GLuint*);
-
-        using BindVertexArrayProc =
-            void(APIENTRY*)(GLuint);
-
-        using DeleteVertexArraysProc =
-            void(APIENTRY*)(GLsizei, const GLuint*);
-
-        using GenBuffersProc =
-            void(APIENTRY*)(GLsizei, GLuint*);
-
-        using BindBufferProc =
-            void(APIENTRY*)(GLenum, GLuint);
-
-        using BufferDataProc =
-            void(APIENTRY*)(GLenum, GLsizeiptr, const void*, GLenum);
-
-        using DeleteBuffersProc =
-            void(APIENTRY*)(GLsizei, const GLuint*);
-
-        using EnableVertexAttribArrayProc =
-            void(APIENTRY*)(GLuint);
-
-        using VertexAttribPointerProc =
-            void(APIENTRY*)(GLuint, GLint, GLenum, GLboolean, GLsizei, const void*);
-
-        using DrawElementsProc =
-            void(APIENTRY*)(GLenum, GLsizei, GLenum, const void*);
+        using GenVertexArraysProc = void(APIENTRY*)(GLsizei, GLuint*);
+        using BindVertexArrayProc = void(APIENTRY*)(GLuint);
+        using DeleteVertexArraysProc = void(APIENTRY*)(GLsizei, const GLuint*);
+        using GenBuffersProc = void(APIENTRY*)(GLsizei, GLuint*);
+        using BindBufferProc = void(APIENTRY*)(GLenum, GLuint);
+        using BufferDataProc = void(APIENTRY*)(GLenum, GLsizeiptr, const void*, GLenum);
+        using DeleteBuffersProc = void(APIENTRY*)(GLsizei, const GLuint*);
+        using EnableVertexAttribArrayProc = void(APIENTRY*)(GLuint);
+        using VertexAttribPointerProc = void(APIENTRY*)(GLuint, GLint, GLenum, GLboolean, GLsizei, const void*);
+        using DrawElementsProc = void(APIENTRY*)(GLenum, GLsizei, GLenum, const void*);
 
         template<typename T>
         bool LoadGLFunction(T& function, const char* name)
@@ -224,7 +194,6 @@ namespace industrial_frontier
             {
                 std::cerr << "Failed to load OpenGL function: "
                           << name << '\n';
-
                 return false;
             }
 
@@ -253,11 +222,11 @@ namespace industrial_frontier
 
         EnableVertexAttribArrayProc EnableVertexAttribArray = nullptr;
         VertexAttribPointerProc VertexAttribPointer = nullptr;
-
         DrawElementsProc DrawElements = nullptr;
 
         Shader terrainShader;
         TerrainWorld terrainWorld;
+        TerrainGenerationWorker terrainWorker;
 
         std::unordered_map<std::uint64_t, GPUChunk> gpuChunks;
 
@@ -273,46 +242,22 @@ namespace industrial_frontier
         float sprintMultiplier = 3.0f;
         float mouseSensitivity = 0.12f;
 
+        int currentChunkX = 0;
+        int currentChunkZ = 0;
+
         bool initialized = false;
 
         bool LoadFunctions()
         {
             bool success = true;
 
-            success &= LoadGLFunction(
-                GenVertexArrays,
-                "glGenVertexArrays"
-            );
-
-            success &= LoadGLFunction(
-                BindVertexArray,
-                "glBindVertexArray"
-            );
-
-            success &= LoadGLFunction(
-                DeleteVertexArrays,
-                "glDeleteVertexArrays"
-            );
-
-            success &= LoadGLFunction(
-                GenBuffers,
-                "glGenBuffers"
-            );
-
-            success &= LoadGLFunction(
-                BindBuffer,
-                "glBindBuffer"
-            );
-
-            success &= LoadGLFunction(
-                BufferData,
-                "glBufferData"
-            );
-
-            success &= LoadGLFunction(
-                DeleteBuffers,
-                "glDeleteBuffers"
-            );
+            success &= LoadGLFunction(GenVertexArrays, "glGenVertexArrays");
+            success &= LoadGLFunction(BindVertexArray, "glBindVertexArray");
+            success &= LoadGLFunction(DeleteVertexArrays, "glDeleteVertexArrays");
+            success &= LoadGLFunction(GenBuffers, "glGenBuffers");
+            success &= LoadGLFunction(BindBuffer, "glBindBuffer");
+            success &= LoadGLFunction(BufferData, "glBufferData");
+            success &= LoadGLFunction(DeleteBuffers, "glDeleteBuffers");
 
             success &= LoadGLFunction(
                 EnableVertexAttribArray,
@@ -324,10 +269,7 @@ namespace industrial_frontier
                 "glVertexAttribPointer"
             );
 
-            success &= LoadGLFunction(
-                DrawElements,
-                "glDrawElements"
-            );
+            success &= LoadGLFunction(DrawElements, "glDrawElements");
 
             return success;
         }
@@ -361,6 +303,27 @@ namespace industrial_frontier
                 static_cast<std::uint32_t>(z);
         }
 
+        void DeleteChunk(GPUChunk& chunk)
+        {
+            if (chunk.indexBuffer != 0)
+            {
+                DeleteBuffers(1, &chunk.indexBuffer);
+                chunk.indexBuffer = 0;
+            }
+
+            if (chunk.vertexBuffer != 0)
+            {
+                DeleteBuffers(1, &chunk.vertexBuffer);
+                chunk.vertexBuffer = 0;
+            }
+
+            if (chunk.vertexArray != 0)
+            {
+                DeleteVertexArrays(1, &chunk.vertexArray);
+                chunk.vertexArray = 0;
+            }
+        }
+
         bool UploadChunk(const TerrainChunk& chunk)
         {
             const auto& vertices = chunk.GetVertices();
@@ -387,10 +350,7 @@ namespace industrial_frontier
 
             BindVertexArray(gpuChunk.vertexArray);
 
-            BindBuffer(
-                GL_ARRAY_BUFFER,
-                gpuChunk.vertexBuffer
-            );
+            BindBuffer(GL_ARRAY_BUFFER, gpuChunk.vertexBuffer);
 
             BufferData(
                 GL_ARRAY_BUFFER,
@@ -401,10 +361,7 @@ namespace industrial_frontier
                 GL_STATIC_DRAW
             );
 
-            BindBuffer(
-                GL_ELEMENT_ARRAY_BUFFER,
-                gpuChunk.indexBuffer
-            );
+            BindBuffer(GL_ELEMENT_ARRAY_BUFFER, gpuChunk.indexBuffer);
 
             BufferData(
                 GL_ELEMENT_ARRAY_BUFFER,
@@ -421,11 +378,7 @@ namespace industrial_frontier
             EnableVertexAttribArray(0);
 
             VertexAttribPointer(
-                0,
-                3,
-                GL_FLOAT,
-                GL_FALSE,
-                stride,
+                0, 3, GL_FLOAT, GL_FALSE, stride,
                 reinterpret_cast<const void*>(
                     offsetof(TerrainVertex, position)
                 )
@@ -434,11 +387,7 @@ namespace industrial_frontier
             EnableVertexAttribArray(1);
 
             VertexAttribPointer(
-                1,
-                3,
-                GL_FLOAT,
-                GL_FALSE,
-                stride,
+                1, 3, GL_FLOAT, GL_FALSE, stride,
                 reinterpret_cast<const void*>(
                     offsetof(TerrainVertex, normal)
                 )
@@ -447,11 +396,7 @@ namespace industrial_frontier
             EnableVertexAttribArray(2);
 
             VertexAttribPointer(
-                2,
-                3,
-                GL_FLOAT,
-                GL_FALSE,
-                stride,
+                2, 3, GL_FLOAT, GL_FALSE, stride,
                 reinterpret_cast<const void*>(
                     offsetof(TerrainVertex, color)
                 )
@@ -462,7 +407,7 @@ namespace industrial_frontier
             gpuChunk.indexCount =
                 static_cast<GLsizei>(indices.size());
 
-            gpuChunks.emplace(
+            const auto result = gpuChunks.emplace(
                 MakeChunkKey(
                     chunk.GetChunkX(),
                     chunk.GetChunkZ()
@@ -470,28 +415,13 @@ namespace industrial_frontier
                 gpuChunk
             );
 
+            if (!result.second)
+            {
+                DeleteChunk(gpuChunk);
+                return false;
+            }
+
             return true;
-        }
-
-        void DeleteChunk(GPUChunk& chunk)
-        {
-            if (chunk.indexBuffer != 0)
-            {
-                DeleteBuffers(1, &chunk.indexBuffer);
-                chunk.indexBuffer = 0;
-            }
-
-            if (chunk.vertexBuffer != 0)
-            {
-                DeleteBuffers(1, &chunk.vertexBuffer);
-                chunk.vertexBuffer = 0;
-            }
-
-            if (chunk.vertexArray != 0)
-            {
-                DeleteVertexArrays(1, &chunk.vertexArray);
-                chunk.vertexArray = 0;
-            }
         }
 
         void ClearGPUChunks()
@@ -502,30 +432,6 @@ namespace industrial_frontier
             }
 
             gpuChunks.clear();
-        }
-
-        bool GenerateTerrain()
-        {
-            if (!terrainWorld.GenerateWorld(3))
-            {
-                std::cerr << "Failed to generate terrain world.\n";
-                return false;
-            }
-
-            for (const auto& entry : terrainWorld.GetChunks())
-            {
-                if (!UploadChunk(entry.second))
-                {
-                    std::cerr << "Failed to upload terrain chunk.\n";
-                    return false;
-                }
-            }
-
-            std::cout << "Uploaded "
-                      << gpuChunks.size()
-                      << " terrain chunks to the GPU.\n";
-
-            return !gpuChunks.empty();
         }
 
         void SetLighting()
@@ -551,15 +457,8 @@ namespace industrial_frontier
                 0.58f
             );
 
-            terrainShader.SetFloat(
-                "uLightIntensity",
-                1.15f
-            );
-
-            terrainShader.SetFloat(
-                "uAmbientIntensity",
-                0.65f
-            );
+            terrainShader.SetFloat("uLightIntensity", 1.15f);
+            terrainShader.SetFloat("uAmbientIntensity", 0.65f);
 
             terrainShader.SetVec3(
                 "uViewPosition",
@@ -567,6 +466,171 @@ namespace industrial_frontier
                 cameraPosition.y,
                 cameraPosition.z
             );
+        }
+
+        void UpdateStreamingCenter()
+        {
+            const float chunkSize = terrainWorld.GetChunkSize();
+
+            currentChunkX = static_cast<int>(
+                std::floor(cameraPosition.x / chunkSize)
+            );
+
+            currentChunkZ = static_cast<int>(
+                std::floor(cameraPosition.z / chunkSize)
+            );
+
+            terrainWorker.SetCenter(
+                currentChunkX,
+                currentChunkZ
+            );
+        }
+
+        void RemoveDistantChunks()
+        {
+            for (auto iterator = gpuChunks.begin();
+                 iterator != gpuChunks.end();)
+            {
+                const int chunkX = static_cast<int>(
+                    static_cast<std::int32_t>(
+                        iterator->first >> 32
+                    )
+                );
+
+                const int chunkZ = static_cast<int>(
+                    static_cast<std::int32_t>(
+                        iterator->first & 0xFFFFFFFFu
+                    )
+                );
+
+                if (std::abs(chunkX - currentChunkX) > UnloadRadius ||
+                    std::abs(chunkZ - currentChunkZ) > UnloadRadius)
+                {
+                    DeleteChunk(iterator->second);
+
+                    terrainWorld.RemoveChunk(chunkX, chunkZ);
+
+                    iterator = gpuChunks.erase(iterator);
+                }
+                else
+                {
+                    ++iterator;
+                }
+            }
+        }
+
+        void RequestNearbyChunks()
+        {
+            for (int z = -LoadRadius; z <= LoadRadius; ++z)
+            {
+                for (int x = -LoadRadius; x <= LoadRadius; ++x)
+                {
+                    const int chunkX = currentChunkX + x;
+                    const int chunkZ = currentChunkZ + z;
+
+                    const std::uint64_t key =
+                        MakeChunkKey(chunkX, chunkZ);
+
+                    if (gpuChunks.find(key) != gpuChunks.end())
+                    {
+                        continue;
+                    }
+
+                    if (terrainWorld.GetChunk(chunkX, chunkZ) != nullptr)
+                    {
+                        continue;
+                    }
+
+                    terrainWorker.RequestChunk(chunkX, chunkZ);
+                }
+            }
+        }
+
+        void UploadCompletedChunks()
+        {
+            TerrainChunk chunk;
+            int uploaded = 0;
+
+            while (uploaded < MaxUploadsPerFrame &&
+                   terrainWorker.TryGetCompletedChunk(chunk))
+            {
+                const int dx = chunk.GetChunkX() - currentChunkX;
+                const int dz = chunk.GetChunkZ() - currentChunkZ;
+
+                if (std::abs(dx) > UnloadRadius ||
+                    std::abs(dz) > UnloadRadius)
+                {
+                    continue;
+                }
+
+                const int chunkX = chunk.GetChunkX();
+                const int chunkZ = chunk.GetChunkZ();
+
+                if (!terrainWorld.AddGeneratedChunk(std::move(chunk)))
+                {
+                    continue;
+                }
+
+                const TerrainChunk* storedChunk =
+                    terrainWorld.GetChunk(chunkX, chunkZ);
+
+                if (storedChunk == nullptr ||
+                    !UploadChunk(*storedChunk))
+                {
+                    terrainWorld.RemoveChunk(chunkX, chunkZ);
+
+                    std::cerr
+                        << "Failed to upload completed terrain chunk ("
+                        << chunkX << ", " << chunkZ << ").\n";
+
+                    continue;
+                }
+
+                ++uploaded;
+            }
+        }
+
+        void StreamTerrain()
+        {
+            UpdateStreamingCenter();
+
+            RemoveDistantChunks();
+
+            UploadCompletedChunks();
+
+            RequestNearbyChunks();
+        }
+
+        bool StartTerrainGeneration()
+        {
+            terrainWorker.Start(
+                terrainWorld.GetSettings(),
+                terrainWorld.GetChunkSize(),
+                terrainWorld.GetVertexSpacing()
+            );
+
+            if (!terrainWorker.IsRunning())
+            {
+                std::cerr << "Failed to start terrain generation worker.\n";
+                return false;
+            }
+
+            UpdateStreamingCenter();
+            RequestNearbyChunks();
+
+            std::cout
+                << "Background terrain generation started. "
+                << "Load radius: " << LoadRadius
+                << ", target chunks: "
+                << (LoadRadius * 2 + 1) * (LoadRadius * 2 + 1)
+                << ".\n";
+
+            return true;
+        }
+
+        void StopTerrainGeneration()
+        {
+            terrainWorker.Stop();
         }
     };
 
@@ -613,25 +677,20 @@ namespace industrial_frontier
         glCullFace(GL_BACK);
         glFrontFace(GL_CCW);
 
-        glClearColor(
-            0.48f,
-            0.62f,
-            0.78f,
-            1.0f
-        );
+        glClearColor(0.48f, 0.62f, 0.78f, 1.0f);
 
         m_impl->UpdateCameraVectors();
 
-        if (!m_impl->GenerateTerrain())
+        if (!m_impl->StartTerrainGeneration())
         {
-            m_impl->ClearGPUChunks();
             m_impl->terrainShader.Shutdown();
             return false;
         }
 
         m_impl->initialized = true;
 
-        std::cout << "Renderer initialized with external terrain shaders.\n";
+        std::cout
+            << "Renderer initialized with asynchronous terrain generation.\n";
 
         return true;
     }
@@ -641,8 +700,7 @@ namespace industrial_frontier
         float forwardInput,
         float rightInput,
         float verticalInput,
-        bool sprint
-    )
+        bool sprint)
     {
         if (!m_impl)
         {
@@ -684,10 +742,7 @@ namespace industrial_frontier
         );
     }
 
-    void Renderer::RotateCamera(
-        float deltaX,
-        float deltaY
-    )
+    void Renderer::RotateCamera(float deltaX, float deltaY)
     {
         if (!m_impl)
         {
@@ -718,6 +773,8 @@ namespace industrial_frontier
         {
             return;
         }
+
+        m_impl->StreamTerrain();
 
         glViewport(0, 0, width, height);
 
@@ -792,7 +849,10 @@ namespace industrial_frontier
             return;
         }
 
+        m_impl->StopTerrainGeneration();
+
         m_impl->ClearGPUChunks();
+        m_impl->terrainWorld.Clear();
         m_impl->terrainShader.Shutdown();
 
         m_impl->initialized = false;

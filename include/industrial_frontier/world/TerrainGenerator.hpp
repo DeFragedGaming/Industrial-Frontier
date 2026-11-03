@@ -27,7 +27,6 @@ namespace industrial_frontier
     {
     public:
         TerrainGenerator();
-
         explicit TerrainGenerator(const TerrainSettings& settings);
 
         void SetSettings(const TerrainSettings& settings);

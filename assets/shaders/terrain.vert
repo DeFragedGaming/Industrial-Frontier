@@ -16,7 +16,9 @@ void main()
     vec4 worldPosition = uModel * vec4(aPosition, 1.0);
 
     vWorldPosition = worldPosition.xyz;
-    vWorldNormal = normalize(mat3(transpose(inverse(uModel))) * aNormal);
+    vWorldNormal = normalize(
+        mat3(transpose(inverse(uModel))) * aNormal
+    );
     vTerrainColor = aColor;
 
     gl_Position = uMVP * vec4(aPosition, 1.0);

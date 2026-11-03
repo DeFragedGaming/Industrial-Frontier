@@ -28,6 +28,10 @@ namespace industrial_frontier
         bool GenerateWorld(int chunkRadius);
         bool GenerateChunk(int chunkX, int chunkZ);
 
+        bool AddGeneratedChunk(TerrainChunk&& chunk);
+
+        bool RemoveChunk(int chunkX, int chunkZ);
+
         void Clear();
 
         TerrainChunk* GetChunk(int chunkX, int chunkZ);
@@ -37,10 +41,8 @@ namespace industrial_frontier
             int chunkZ
         ) const;
 
-        const std::unordered_map<
-            std::uint64_t,
-            TerrainChunk
-        >& GetChunks() const;
+        const std::unordered_map<std::uint64_t, TerrainChunk>&
+            GetChunks() const;
 
         const TerrainGenerator& GetGenerator() const;
         const TerrainSettings& GetSettings() const;
@@ -56,10 +58,7 @@ namespace industrial_frontier
         float m_chunkSize = 32.0f;
         float m_vertexSpacing = 1.0f;
 
-        std::unordered_map<
-            std::uint64_t,
-            TerrainChunk
-        > m_chunks;
+        std::unordered_map<std::uint64_t, TerrainChunk> m_chunks;
 
         static std::uint64_t MakeChunkKey(
             int chunkX,

@@ -1,24 +1,65 @@
-
 #include "industrial_frontier/world/TerrainChunk.hpp"
 
 #include <algorithm>
 #include <cmath>
-#include <cstdint>
 
 namespace industrial_frontier
 {
-    TerrainChunk::TerrainChunk() = default;
+    namespace
+    {
+        struct Color
+        {
+            float r;
+            float g;
+            float b;
+        };
+
+        Color LerpColor(const Color& a, const Color& b, float t)
+        {
+            t = std::clamp(t, 0.0f, 1.0f);
+
+            return {
+                a.r + (b.r - a.r) * t,
+                a.g + (b.g - a.g) * t,
+                a.b + (b.b - a.b) * t
+            };
+        }
+
+        float SmoothBlend(float value, float minimum, float maximum)
+        {
+            if (maximum <= minimum)
+            {
+                return 0.0f;
+            }
+
+            float t = std::clamp(
+                (value - minimum) / (maximum - minimum),
+                0.0f,
+                1.0f
+            );
+
+            return t * t * (3.0f - 2.0f * t);
+        }
+
+        float Length(float x, float y, float z)
+        {
+            return std::sqrt(x * x + y * y + z * z);
+        }
+    }
+
+    TerrainChunk::TerrainChunk()
+    {
+    }
 
     TerrainChunk::TerrainChunk(
         int chunkX,
         int chunkZ,
         float chunkSize,
-        float vertexSpacing
-    )
+        float vertexSpacing)
         : m_chunkX(chunkX),
           m_chunkZ(chunkZ),
-          m_chunkSize(chunkSize),
-          m_vertexSpacing(vertexSpacing)
+          m_chunkSize(std::max(chunkSize, 1.0f)),
+          m_vertexSpacing(std::max(vertexSpacing, 0.1f))
     {
     }
 
@@ -26,23 +67,21 @@ namespace industrial_frontier
     {
         Clear();
 
-        if (m_chunkSize <= 0.0f ||
-            m_vertexSpacing <= 0.0f)
-        {
-            return false;
-        }
-
-        const int segments = static_cast<int>(
-            std::ceil(m_chunkSize / m_vertexSpacing)
+        const int segments = std::max(
+            1,
+            static_cast<int>(
+                std::ceil(m_chunkSize / m_vertexSpacing)
+            )
         );
 
-        if (segments <= 0)
-        {
-            return false;
-        }
+        const float spacing = m_chunkSize /
+            static_cast<float>(segments);
 
-        const float spacing =
-            m_chunkSize / static_cast<float>(segments);
+        const float startX =
+            static_cast<float>(m_chunkX) * m_chunkSize;
+
+        const float startZ =
+            static_cast<float>(m_chunkZ) * m_chunkSize;
 
         const std::size_t vertexCount =
             static_cast<std::size_t>(segments + 1) *
@@ -50,21 +89,20 @@ namespace industrial_frontier
 
         m_vertices.reserve(vertexCount);
 
-        const float originX =
-            static_cast<float>(m_chunkX) * m_chunkSize;
-
-        const float originZ =
-            static_cast<float>(m_chunkZ) * m_chunkSize;
+        m_indices.reserve(
+            static_cast<std::size_t>(segments) *
+            static_cast<std::size_t>(segments) * 6
+        );
 
         for (int z = 0; z <= segments; ++z)
         {
             for (int x = 0; x <= segments; ++x)
             {
                 const float worldX =
-                    originX + static_cast<float>(x) * spacing;
+                    startX + static_cast<float>(x) * spacing;
 
                 const float worldZ =
-                    originZ + static_cast<float>(z) * spacing;
+                    startZ + static_cast<float>(z) * spacing;
 
                 m_vertices.push_back(
                     CreateVertex(generator, worldX, worldZ)
@@ -72,42 +110,34 @@ namespace industrial_frontier
             }
         }
 
-        const std::size_t indexCount =
-            static_cast<std::size_t>(segments) *
-            static_cast<std::size_t>(segments) * 6;
-
-        m_indices.reserve(indexCount);
-
-        const unsigned int rowWidth =
-            static_cast<unsigned int>(segments + 1);
-
         for (int z = 0; z < segments; ++z)
         {
             for (int x = 0; x < segments; ++x)
             {
-                const unsigned int a =
-                    static_cast<unsigned int>(z) * rowWidth +
-                    static_cast<unsigned int>(x);
+                const unsigned int topLeft =
+                    static_cast<unsigned int>(
+                        z * (segments + 1) + x
+                    );
 
-                const unsigned int b = a + 1;
-                const unsigned int c = a + rowWidth;
-                const unsigned int d = c + 1;
+                const unsigned int topRight = topLeft + 1;
 
-                m_indices.push_back(a);
-                m_indices.push_back(c);
-                m_indices.push_back(b);
+                const unsigned int bottomLeft =
+                    topLeft + static_cast<unsigned int>(segments + 1);
 
-                m_indices.push_back(b);
-                m_indices.push_back(c);
-                m_indices.push_back(d);
+                const unsigned int bottomRight = bottomLeft + 1;
+
+                m_indices.push_back(topLeft);
+                m_indices.push_back(bottomLeft);
+                m_indices.push_back(topRight);
+
+                m_indices.push_back(topRight);
+                m_indices.push_back(bottomLeft);
+                m_indices.push_back(bottomRight);
             }
         }
 
-        m_generated =
-            !m_vertices.empty() &&
-            !m_indices.empty();
-
-        return m_generated;
+        m_generated = true;
+        return true;
     }
 
     int TerrainChunk::GetChunkX() const
@@ -125,14 +155,12 @@ namespace industrial_frontier
         return m_chunkSize;
     }
 
-    const std::vector<TerrainVertex>&
-    TerrainChunk::GetVertices() const
+    const std::vector<TerrainVertex>& TerrainChunk::GetVertices() const
     {
         return m_vertices;
     }
 
-    const std::vector<unsigned int>&
-    TerrainChunk::GetIndices() const
+    const std::vector<unsigned int>& TerrainChunk::GetIndices() const
     {
         return m_indices;
     }
@@ -152,115 +180,186 @@ namespace industrial_frontier
     TerrainVertex TerrainChunk::CreateVertex(
         const TerrainGenerator& generator,
         float worldX,
-        float worldZ
-    ) const
+        float worldZ) const
     {
         TerrainVertex vertex{};
 
-        const float height =
-            generator.GetHeight(worldX, worldZ);
+        const float sampleDistance =
+            std::max(m_vertexSpacing * 0.5f, 0.1f);
 
-        const float normalSampleDistance =
-            std::max(m_vertexSpacing * 0.5f, 0.01f);
+        const float height = generator.GetHeight(
+            worldX,
+            worldZ
+        );
 
         const float leftHeight = generator.GetHeight(
-            worldX - normalSampleDistance,
+            worldX - sampleDistance,
             worldZ
         );
 
         const float rightHeight = generator.GetHeight(
-            worldX + normalSampleDistance,
+            worldX + sampleDistance,
             worldZ
         );
 
         const float backHeight = generator.GetHeight(
             worldX,
-            worldZ - normalSampleDistance
+            worldZ - sampleDistance
         );
 
         const float frontHeight = generator.GetHeight(
             worldX,
-            worldZ + normalSampleDistance
+            worldZ + sampleDistance
         );
 
-        const float slopeX =
-            (rightHeight - leftHeight) /
-            (normalSampleDistance * 2.0f);
+        float normalX = leftHeight - rightHeight;
+        float normalY = sampleDistance * 2.0f;
+        float normalZ = backHeight - frontHeight;
 
-        const float slopeZ =
-            (frontHeight - backHeight) /
-            (normalSampleDistance * 2.0f);
-
-        const float normalLength = std::sqrt(
-            slopeX * slopeX +
-            slopeZ * slopeZ +
-            1.0f
+        const float normalLength = Length(
+            normalX,
+            normalY,
+            normalZ
         );
+
+        if (normalLength > 0.0001f)
+        {
+            normalX /= normalLength;
+            normalY /= normalLength;
+            normalZ /= normalLength;
+        }
+        else
+        {
+            normalX = 0.0f;
+            normalY = 1.0f;
+            normalZ = 0.0f;
+        }
 
         vertex.position[0] = worldX;
         vertex.position[1] = height;
         vertex.position[2] = worldZ;
 
-        vertex.normal[0] = -slopeX / normalLength;
-        vertex.normal[1] = 1.0f / normalLength;
-        vertex.normal[2] = -slopeZ / normalLength;
+        vertex.normal[0] = normalX;
+        vertex.normal[1] = normalY;
+        vertex.normal[2] = normalZ;
 
         CalculateVertexColor(vertex, height);
+
+        const float slope = 1.0f - normalY;
+
+        if (slope > 0.30f)
+        {
+            const float rockBlend = std::clamp(
+                (slope - 0.30f) / 0.45f,
+                0.0f,
+                0.85f
+            );
+
+            const float rockR = 0.39f;
+            const float rockG = 0.38f;
+            const float rockB = 0.36f;
+
+            vertex.color[0] =
+                vertex.color[0] * (1.0f - rockBlend) +
+                rockR * rockBlend;
+
+            vertex.color[1] =
+                vertex.color[1] * (1.0f - rockBlend) +
+                rockG * rockBlend;
+
+            vertex.color[2] =
+                vertex.color[2] * (1.0f - rockBlend) +
+                rockB * rockBlend;
+        }
 
         return vertex;
     }
 
     void TerrainChunk::CalculateVertexColor(
         TerrainVertex& vertex,
-        float height
-    ) const
+        float height) const
     {
-        const float slope = 1.0f - vertex.normal[1];
+        const Color deepEarth = {
+            0.20f, 0.16f, 0.11f
+        };
 
-        float red = 0.20f;
-        float green = 0.42f;
-        float blue = 0.18f;
+        const Color dirt = {
+            0.38f, 0.28f, 0.17f
+        };
 
-        if (height < -2.0f)
+        const Color grass = {
+            0.25f, 0.43f, 0.17f
+        };
+
+        const Color highlandGrass = {
+            0.34f, 0.43f, 0.22f
+        };
+
+        const Color rock = {
+            0.40f, 0.39f, 0.37f
+        };
+
+        const Color highRock = {
+            0.54f, 0.53f, 0.50f
+        };
+
+        const Color snow = {
+            0.82f, 0.84f, 0.86f
+        };
+
+        Color result;
+
+        if (height < -8.0f)
         {
-            red = 0.24f;
-            green = 0.25f;
-            blue = 0.27f;
+            result = LerpColor(
+                deepEarth,
+                dirt,
+                SmoothBlend(height, -25.0f, -8.0f)
+            );
         }
-        else if (height < 5.0f)
+        else if (height < 8.0f)
         {
-            red = 0.32f;
-            green = 0.43f;
-            blue = 0.22f;
+            result = LerpColor(
+                dirt,
+                grass,
+                SmoothBlend(height, -8.0f, 8.0f)
+            );
         }
-        else if (height < 18.0f)
+        else if (height < 25.0f)
         {
-            red = 0.35f;
-            green = 0.38f;
-            blue = 0.24f;
+            result = LerpColor(
+                grass,
+                highlandGrass,
+                SmoothBlend(height, 8.0f, 25.0f)
+            );
         }
-        else if (height < 32.0f)
+        else if (height < 43.0f)
         {
-            red = 0.42f;
-            green = 0.38f;
-            blue = 0.31f;
+            result = LerpColor(
+                highlandGrass,
+                rock,
+                SmoothBlend(height, 25.0f, 43.0f)
+            );
+        }
+        else if (height < 65.0f)
+        {
+            result = LerpColor(
+                rock,
+                highRock,
+                SmoothBlend(height, 43.0f, 65.0f)
+            );
         }
         else
         {
-            red = 0.72f;
-            green = 0.72f;
-            blue = 0.70f;
+            result = LerpColor(
+                highRock,
+                snow,
+                SmoothBlend(height, 65.0f, 95.0f)
+            );
         }
 
-        if (slope > 0.30f)
-        {
-            red = std::min(red + 0.12f, 1.0f);
-            green = std::min(green + 0.10f, 1.0f);
-            blue = std::min(blue + 0.08f, 1.0f);
-        }
-
-        vertex.color[0] = red;
-        vertex.color[1] = green;
-        vertex.color[2] = blue;
+        vertex.color[0] = result.r;
+        vertex.color[1] = result.g;
+        vertex.color[2] = result.b;
     }
 }

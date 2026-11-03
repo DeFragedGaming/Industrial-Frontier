@@ -7,35 +7,27 @@
 namespace industrial_frontier
 {
     TerrainWorld::TerrainWorld()
-        : m_generator(),
-          m_chunkSize(32.0f),
-          m_vertexSpacing(1.0f)
+        : TerrainWorld(TerrainSettings{})
     {
     }
 
     TerrainWorld::TerrainWorld(
         const TerrainSettings& settings,
         float chunkSize,
-        float vertexSpacing
-    )
+        float vertexSpacing)
         : m_generator(settings),
           m_chunkSize(std::max(chunkSize, 1.0f)),
           m_vertexSpacing(std::max(vertexSpacing, 0.1f))
     {
     }
 
-    std::uint64_t TerrainWorld::MakeChunkKey(
-        int chunkX,
-        int chunkZ
-    )
+    std::uint64_t TerrainWorld::MakeChunkKey(int chunkX, int chunkZ)
     {
-        const std::uint64_t x =
-            static_cast<std::uint32_t>(chunkX);
-
-        const std::uint64_t z =
+        return
+            (static_cast<std::uint64_t>(
+                static_cast<std::uint32_t>(chunkX)
+            ) << 32) |
             static_cast<std::uint32_t>(chunkZ);
-
-        return (x << 32) | z;
     }
 
     bool TerrainWorld::GenerateWorld(int chunkRadius)
@@ -44,39 +36,25 @@ namespace industrial_frontier
 
         chunkRadius = std::max(chunkRadius, 0);
 
-        const std::uint64_t sideLength =
-            static_cast<std::uint64_t>(chunkRadius) * 2u + 1u;
+        bool success = true;
 
-        m_chunks.reserve(
-            static_cast<std::size_t>(sideLength * sideLength)
-        );
-
-        for (int chunkZ = -chunkRadius;
-             chunkZ <= chunkRadius;
-             ++chunkZ)
+        for (int z = -chunkRadius; z <= chunkRadius; ++z)
         {
-            for (int chunkX = -chunkRadius;
-                 chunkX <= chunkRadius;
-                 ++chunkX)
+            for (int x = -chunkRadius; x <= chunkRadius; ++x)
             {
-                if (!GenerateChunk(chunkX, chunkZ))
+                if (!GenerateChunk(x, z))
                 {
-                    Clear();
-                    return false;
+                    success = false;
                 }
             }
         }
 
-        return !m_chunks.empty();
+        return success;
     }
 
-    bool TerrainWorld::GenerateChunk(
-        int chunkX,
-        int chunkZ
-    )
+    bool TerrainWorld::GenerateChunk(int chunkX, int chunkZ)
     {
-        const std::uint64_t key =
-            MakeChunkKey(chunkX, chunkZ);
+        const std::uint64_t key = MakeChunkKey(chunkX, chunkZ);
 
         if (m_chunks.find(key) != m_chunks.end())
         {
@@ -100,51 +78,62 @@ namespace industrial_frontier
         return true;
     }
 
+    bool TerrainWorld::AddGeneratedChunk(TerrainChunk&& chunk)
+    {
+        if (!chunk.IsGenerated())
+        {
+            return false;
+        }
+
+        const std::uint64_t key = MakeChunkKey(
+            chunk.GetChunkX(),
+            chunk.GetChunkZ()
+        );
+
+        return m_chunks.emplace(
+            key,
+            std::move(chunk)
+        ).second;
+    }
+
+    bool TerrainWorld::RemoveChunk(int chunkX, int chunkZ)
+    {
+        return m_chunks.erase(
+            MakeChunkKey(chunkX, chunkZ)
+        ) > 0;
+    }
+
     void TerrainWorld::Clear()
     {
         m_chunks.clear();
     }
 
-    TerrainChunk* TerrainWorld::GetChunk(
-        int chunkX,
-        int chunkZ
-    )
+    TerrainChunk* TerrainWorld::GetChunk(int chunkX, int chunkZ)
     {
-        const std::uint64_t key =
-            MakeChunkKey(chunkX, chunkZ);
+        const auto iterator = m_chunks.find(
+            MakeChunkKey(chunkX, chunkZ)
+        );
 
-        const auto iterator = m_chunks.find(key);
-
-        if (iterator == m_chunks.end())
-        {
-            return nullptr;
-        }
-
-        return &iterator->second;
+        return iterator == m_chunks.end()
+            ? nullptr
+            : &iterator->second;
     }
 
     const TerrainChunk* TerrainWorld::GetChunk(
         int chunkX,
-        int chunkZ
-    ) const
+        int chunkZ) const
     {
-        const std::uint64_t key =
-            MakeChunkKey(chunkX, chunkZ);
+        const auto iterator = m_chunks.find(
+            MakeChunkKey(chunkX, chunkZ)
+        );
 
-        const auto iterator = m_chunks.find(key);
-
-        if (iterator == m_chunks.end())
-        {
-            return nullptr;
-        }
-
-        return &iterator->second;
+        return iterator == m_chunks.end()
+            ? nullptr
+            : &iterator->second;
     }
 
-    const std::unordered_map<
-        std::uint64_t,
-        TerrainChunk
-    >& TerrainWorld::GetChunks() const
+    const std::unordered_map<std::uint64_t, TerrainChunk>&
+    TerrainWorld::GetChunks() const
     {
         return m_chunks;
     }

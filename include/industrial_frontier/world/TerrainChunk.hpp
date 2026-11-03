@@ -2,7 +2,6 @@
 
 #include "industrial_frontier/world/TerrainGenerator.hpp"
 
-#include <cstddef>
 #include <vector>
 
 namespace industrial_frontier
