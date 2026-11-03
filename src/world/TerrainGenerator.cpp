@@ -1,3 +1,4 @@
+
 #include "industrial_frontier/world/TerrainGenerator.hpp"
 
 #include <algorithm>
@@ -8,32 +9,33 @@ namespace industrial_frontier
 {
     namespace
     {
-        constexpr float PI = 3.14159265358979323846f;
-
         float Clamp01(float value)
         {
             return std::clamp(value, 0.0f, 1.0f);
         }
 
-        float Remap01(float value, float minimum, float maximum)
+        float SmoothRange(float value, float minimum, float maximum)
         {
             if (maximum <= minimum)
             {
-                return 0.0f;
+                return value >= maximum ? 1.0f : 0.0f;
             }
 
-            return Clamp01((value - minimum) / (maximum - minimum));
+            const float t = Clamp01(
+                (value - minimum) / (maximum - minimum)
+            );
+
+            return t * t * (3.0f - 2.0f * t);
         }
 
-        float SmoothRange(float value, float minimum, float maximum)
+        float Saturate(float value)
         {
-            float t = Remap01(value, minimum, maximum);
-            return t * t * (3.0f - 2.0f * t);
+            return std::clamp(value, 0.0f, 1.0f);
         }
     }
 
     TerrainGenerator::TerrainGenerator()
-        : TerrainGenerator(TerrainSettings{})
+        : m_settings()
     {
     }
 
@@ -61,22 +63,19 @@ namespace industrial_frontier
 
         h ^= static_cast<std::uint32_t>(x) * 374761393u;
         h = (h << 13) | (h >> 19);
-
         h ^= static_cast<std::uint32_t>(z) * 668265263u;
-        h *= 1274126177u;
 
+        h *= 1274126177u;
         h ^= h >> 16;
         h *= 2246822519u;
         h ^= h >> 13;
-        h *= 3266489917u;
-        h ^= h >> 16;
 
         return h;
     }
 
     float TerrainGenerator::SmoothStep(float value)
     {
-        value = Clamp01(value);
+        value = Saturate(value);
         return value * value * (3.0f - 2.0f * value);
     }
 
@@ -102,23 +101,21 @@ namespace industrial_frontier
         const float tx = SmoothStep(x - static_cast<float>(x0));
         const float tz = SmoothStep(z - static_cast<float>(z0));
 
-        const auto RandomValue = [seed](int px, int pz)
+        const auto ToFloat = [](std::uint32_t value)
         {
-            const std::uint32_t hash = Hash(px, pz, seed);
-
-            return static_cast<float>(hash) /
-                static_cast<float>(UINT32_MAX);
+            return static_cast<float>(value & 0x00FFFFFFu) /
+                16777215.0f;
         };
 
-        const float v00 = RandomValue(x0, z0);
-        const float v10 = RandomValue(x1, z0);
-        const float v01 = RandomValue(x0, z1);
-        const float v11 = RandomValue(x1, z1);
+        const float a = ToFloat(Hash(x0, z0, seed));
+        const float b = ToFloat(Hash(x1, z0, seed));
+        const float c = ToFloat(Hash(x0, z1, seed));
+        const float d = ToFloat(Hash(x1, z1, seed));
 
-        const float lower = Interpolate(v00, v10, tx);
-        const float upper = Interpolate(v01, v11, tx);
+        const float top = Interpolate(a, b, tx);
+        const float bottom = Interpolate(c, d, tx);
 
-        return Interpolate(lower, upper, tz);
+        return Interpolate(top, bottom, tz);
     }
 
     float TerrainGenerator::FractalNoise(
@@ -129,99 +126,117 @@ namespace industrial_frontier
         float persistence,
         float lacunarity)
     {
-        float total = 0.0f;
-        float amplitude = 1.0f;
+        octaves = std::clamp(octaves, 1, 10);
+        persistence = std::clamp(persistence, 0.05f, 0.95f);
+        lacunarity = std::clamp(lacunarity, 1.1f, 4.0f);
+
         float frequency = 1.0f;
-        float maximumAmplitude = 0.0f;
+        float amplitude = 1.0f;
+        float total = 0.0f;
+        float totalAmplitude = 0.0f;
 
-        octaves = std::max(octaves, 1);
-
-        for (int octave = 0; octave < octaves; ++octave)
+        for (int i = 0; i < octaves; ++i)
         {
             const std::uint32_t octaveSeed =
-                seed + static_cast<std::uint32_t>(octave) * 1013u;
+                seed + static_cast<std::uint32_t>(i) * 1013u;
 
-            const float noise = ValueNoise(
+            total += ValueNoise(
                 x * frequency,
                 z * frequency,
                 octaveSeed
-            );
+            ) * amplitude;
 
-            total += noise * amplitude;
-            maximumAmplitude += amplitude;
-
+            totalAmplitude += amplitude;
             amplitude *= persistence;
             frequency *= lacunarity;
         }
 
-        if (maximumAmplitude <= 0.0f)
+        if (totalAmplitude <= 0.0001f)
         {
             return 0.5f;
         }
 
-        return total / maximumAmplitude;
+        return total / totalAmplitude;
     }
 
-    float TerrainGenerator::GetHeight(
-        float worldX,
-        float worldZ) const
+    float TerrainGenerator::GetHeight(float worldX, float worldZ) const
     {
+        const TerrainSettings& s = m_settings;
+
         const std::uint32_t seed =
-            static_cast<std::uint32_t>(m_settings.seed);
+            static_cast<std::uint32_t>(s.seed);
 
         const float continentalScale =
-            std::max(m_settings.continentalScale, 0.00001f);
+            std::max(s.continentalScale, 0.00001f);
 
         const float mountainScale =
-            std::max(m_settings.mountainScale, 0.00001f);
+            std::max(s.mountainScale, 0.00001f);
 
         const float detailScale =
-            std::max(m_settings.detailScale, 0.00001f);
+            std::max(s.detailScale, 0.00001f);
+
+        const float valleyScale =
+            std::max(s.valleyScale, 0.00001f);
+
+        const float canyonScale =
+            std::max(s.canyonScale, 0.00001f);
+
+        const int octaves = std::clamp(s.noiseOctaves, 1, 10);
 
         const float persistence =
-            std::clamp(m_settings.persistence, 0.1f, 0.9f);
+            std::clamp(s.persistence, 0.05f, 0.95f);
 
         const float lacunarity =
-            std::clamp(m_settings.lacunarity, 1.1f, 4.0f);
+            std::clamp(s.lacunarity, 1.1f, 4.0f);
 
-        const int octaves =
-            std::clamp(m_settings.noiseOctaves, 1, 10);
+        const float continentalWarpX =
+            (FractalNoise(
+                worldX * continentalScale * 0.65f,
+                worldZ * continentalScale * 0.65f,
+                seed + 11u, 3, 0.5f, 2.0f
+            ) - 0.5f) * 180.0f;
 
-        const float warpScale = continentalScale * 1.8f;
+        const float continentalWarpZ =
+            (FractalNoise(
+                worldX * continentalScale * 0.65f,
+                worldZ * continentalScale * 0.65f,
+                seed + 29u, 3, 0.5f, 2.0f
+            ) - 0.5f) * 180.0f;
 
-        const float warpX =
-            (ValueNoise(
-                worldX * warpScale + 31.7f,
-                worldZ * warpScale - 12.4f,
-                seed + 1103u
-            ) - 0.5f) * 2.0f;
-
-        const float warpZ =
-            (ValueNoise(
-                worldX * warpScale - 53.2f,
-                worldZ * warpScale + 27.9f,
-                seed + 2207u
-            ) - 0.5f) * 2.0f;
-
-        const float warpedX = worldX + warpX * 180.0f;
-        const float warpedZ = worldZ + warpZ * 180.0f;
+        const float wx = worldX + continentalWarpX;
+        const float wz = worldZ + continentalWarpZ;
 
         const float continental = FractalNoise(
-            warpedX * continentalScale,
-            warpedZ * continentalScale,
-            seed + 10u,
+            wx * continentalScale,
+            wz * continentalScale,
+            seed + 101u,
             4,
-            0.52f,
+            persistence,
+            lacunarity
+        );
+
+        const float broadNoise = FractalNoise(
+            wx * continentalScale * 2.2f,
+            wz * continentalScale * 2.2f,
+            seed + 202u,
+            4,
+            persistence,
+            lacunarity
+        );
+
+        const float detailNoise = FractalNoise(
+            worldX * detailScale,
+            worldZ * detailScale,
+            seed + 303u,
+            3,
+            0.48f,
             2.0f
         );
 
-        const float continentalShape =
-            (continental - 0.5f) * 2.0f;
-
-        const float lowlandNoise = FractalNoise(
-            warpedX * continentalScale * 2.7f,
-            warpedZ * continentalScale * 2.7f,
-            seed + 20u,
+        const float plainsNoise = FractalNoise(
+            wx * continentalScale * 3.2f,
+            wz * continentalScale * 3.2f,
+            seed + 404u,
             3,
             0.5f,
             2.0f
@@ -229,197 +244,238 @@ namespace industrial_frontier
 
         const float highlandMask = SmoothRange(
             continental,
-            0.43f,
+            0.48f,
+            0.72f
+        );
+
+        const float mountainRegion = SmoothRange(
+            FractalNoise(
+                wx * continentalScale * 0.85f,
+                wz * continentalScale * 0.85f,
+                seed + 505u,
+                3,
+                0.5f,
+                2.0f
+            ),
+            0.48f,
             0.68f
         );
 
-        const float mountainWarpX = FractalNoise(
-            warpedX * mountainScale * 0.45f,
-            warpedZ * mountainScale * 0.45f,
-            seed + 30u,
-            3,
-            0.5f,
-            2.0f
-        );
+        const float plainsMask =
+            (1.0f - SmoothRange(continental, 0.42f, 0.67f)) *
+            (1.0f - SmoothRange(plainsNoise, 0.62f, 0.82f));
 
-        const float mountainWarpZ = FractalNoise(
-            warpedX * mountainScale * 0.45f + 91.0f,
-            warpedZ * mountainScale * 0.45f - 47.0f,
-            seed + 40u,
-            3,
-            0.5f,
-            2.0f
-        );
+        const float broadLand =
+            (continental - 0.48f) * s.heightScale * 1.5f;
 
-        const float mountainX =
-            warpedX + (mountainWarpX - 0.5f) * 95.0f;
+        const float rollingTerrain =
+            (broadNoise - 0.5f) * 12.0f *
+            (1.0f - plainsMask * Saturate(s.plainsFlatness));
 
-        const float mountainZ =
-            warpedZ + (mountainWarpZ - 0.5f) * 95.0f;
+        const float plainsVariation =
+            (plainsNoise - 0.5f) * 5.0f *
+            (1.0f - Saturate(s.plainsFlatness));
 
-        const float mountainBase = FractalNoise(
-            mountainX * mountainScale,
-            mountainZ * mountainScale,
-            seed + 50u,
+        const float mountainWarpX =
+            (FractalNoise(
+                wx * mountainScale * 0.35f,
+                wz * mountainScale * 0.35f,
+                seed + 606u, 3, 0.5f, 2.0f
+            ) - 0.5f) * 75.0f;
+
+        const float mountainWarpZ =
+            (FractalNoise(
+                wx * mountainScale * 0.35f,
+                wz * mountainScale * 0.35f,
+                seed + 707u, 3, 0.5f, 2.0f
+            ) - 0.5f) * 75.0f;
+
+        const float mx = wx + mountainWarpX;
+        const float mz = wz + mountainWarpZ;
+
+        const float mountainNoise = FractalNoise(
+            mx * mountainScale,
+            mz * mountainScale,
+            seed + 808u,
             octaves,
             persistence,
             lacunarity
         );
 
-        const float ridgeNoise = 1.0f - std::abs(
-            mountainBase * 2.0f - 1.0f
-        );
-
-        const float ridges = std::pow(
-            Clamp01(ridgeNoise),
-            1.45f
-        );
-
-        const float ridgeDetail = FractalNoise(
-            mountainX * mountainScale * 2.2f,
-            mountainZ * mountainScale * 2.2f,
-            seed + 60u,
+        const float ridgeNoise = FractalNoise(
+            mx * mountainScale * 1.35f,
+            mz * mountainScale * 1.35f,
+            seed + 909u,
             4,
             0.52f,
             2.0f
         );
 
-        const float mountainShape =
-            ridges * 0.72f +
-            ridgeDetail * 0.28f;
+        const float ridgedShape =
+            1.0f - std::abs(ridgeNoise * 2.0f - 1.0f);
 
-        const float mountainStrength =
-            std::max(m_settings.mountainStrength, 0.0f);
+        const float ridgePeaks = std::pow(
+            Saturate(ridgedShape),
+            1.65f
+        );
+
+        const float mountainBody =
+            SmoothRange(mountainNoise, 0.36f, 0.72f);
 
         const float mountainHeight =
-            mountainShape *
-            highlandMask *
-            mountainStrength *
-            m_settings.heightScale *
-            1.65f;
+            (mountainBody * 0.48f + ridgePeaks * 0.52f) *
+            s.mountainHeight *
+            s.mountainStrength *
+            s.mountainRangeStrength *
+            mountainRegion *
+            highlandMask;
 
-        const float broadTerrain =
-            continentalShape *
-            m_settings.heightScale *
-            0.55f;
+        const float foothillMask =
+            SmoothRange(mountainRegion, 0.12f, 0.68f) *
+            (1.0f - SmoothRange(mountainRegion, 0.72f, 0.98f));
 
-        const float rollingTerrain =
-            (lowlandNoise - 0.5f) *
-            m_settings.heightScale *
-            0.30f;
-
-        const float foothills =
-            highlandMask *
-            (lowlandNoise - 0.35f) *
-            m_settings.heightScale *
-            0.55f;
-
-        const float valleyNoise = FractalNoise(
-            warpedX * continentalScale * 3.2f,
-            warpedZ * continentalScale * 3.2f,
-            seed + 70u,
+        const float foothillNoise = FractalNoise(
+            wx * mountainScale * 0.65f,
+            wz * mountainScale * 0.65f,
+            seed + 1001u,
             4,
             0.55f,
             2.0f
         );
 
-        const float valleyShape = 1.0f - std::abs(
-            valleyNoise * 2.0f - 1.0f
+        const float foothills =
+            foothillMask *
+            (6.0f + foothillNoise * 13.0f) *
+            s.foothillStrength;
+
+        const float valleyWarp =
+            (FractalNoise(
+                wx * valleyScale * 0.4f,
+                wz * valleyScale * 0.4f,
+                seed + 1102u, 3, 0.5f, 2.0f
+            ) - 0.5f) * 0.18f;
+
+        const float valleyField = FractalNoise(
+            wx * valleyScale + valleyWarp,
+            wz * valleyScale - valleyWarp,
+            seed + 1203u,
+            3,
+            0.55f,
+            2.0f
         );
+
+        const float valleyChannel =
+            1.0f - std::abs(valleyField * 2.0f - 1.0f);
+
+        const float valleyWidth =
+            std::clamp(s.valleyWidth, 0.03f, 0.85f);
 
         const float valleyMask = SmoothRange(
-            valleyShape,
-            0.55f,
-            0.90f
+            valleyChannel,
+            1.0f - valleyWidth,
+            1.0f - valleyWidth * 0.35f
         );
-
-        const float valleyStrength =
-            std::max(m_settings.valleyStrength, 0.0f);
 
         const float valleyCut =
             valleyMask *
-            valleyStrength *
-            highlandMask *
-            m_settings.heightScale *
-            0.32f;
+            s.valleyDepth *
+            s.valleyStrength;
 
-        const float cliffNoise = FractalNoise(
-            warpedX * mountainScale * 1.6f,
-            warpedZ * mountainScale * 1.6f,
-            seed + 80u,
+        const float canyonWarpX =
+            (FractalNoise(
+                wx * canyonScale * 0.55f,
+                wz * canyonScale * 0.55f,
+                seed + 1304u, 3, 0.5f, 2.0f
+            ) - 0.5f) * 55.0f;
+
+        const float canyonWarpZ =
+            (FractalNoise(
+                wx * canyonScale * 0.55f,
+                wz * canyonScale * 0.55f,
+                seed + 1405u, 3, 0.5f, 2.0f
+            ) - 0.5f) * 55.0f;
+
+        const float canyonField = FractalNoise(
+            (wx + canyonWarpX) * canyonScale,
+            (wz + canyonWarpZ) * canyonScale,
+            seed + 1506u,
             3,
             0.55f,
             2.0f
         );
 
-        const float cliffMask = SmoothRange(
-            cliffNoise,
-            0.58f,
-            0.82f
-        ) * highlandMask;
+        const float canyonRidge =
+            1.0f - std::abs(canyonField * 2.0f - 1.0f);
+
+        const float canyonWidth =
+            std::clamp(s.canyonWidth, 0.025f, 0.75f);
+
+        const float canyonMask = SmoothRange(
+            canyonRidge,
+            1.0f - canyonWidth,
+            1.0f - canyonWidth * 0.25f
+        );
+
+        const float canyonStrengthMask =
+            SmoothRange(mountainRegion, 0.10f, 0.45f) * 0.65f +
+            0.35f;
+
+        const float canyonCut =
+            canyonMask *
+            s.canyonDepth *
+            s.canyonStrength *
+            canyonStrengthMask;
 
         const float plateauNoise = FractalNoise(
-            warpedX * mountainScale * 0.8f,
-            warpedZ * mountainScale * 0.8f,
-            seed + 90u,
+            wx * mountainScale * 0.75f,
+            wz * mountainScale * 0.75f,
+            seed + 1607u,
             3,
             0.5f,
             2.0f
         );
+
+        const float plateauMask =
+            SmoothRange(plateauNoise, 0.57f, 0.78f) *
+            highlandMask *
+            s.plateauStrength;
 
         const float plateauLevel =
-            std::round(plateauNoise * 5.0f) / 5.0f;
+            std::round(mountainHeight / 9.0f) * 9.0f;
 
-        const float plateauShape = Interpolate(
-            plateauNoise,
-            plateauLevel,
-            cliffMask * 0.28f
-        );
-
-        const float cliffFormation =
-            (plateauShape - plateauNoise) *
-            m_settings.heightScale *
-            0.85f;
-
-        const float detail = FractalNoise(
-            worldX * detailScale,
-            worldZ * detailScale,
-            seed + 100u,
-            std::max(2, octaves - 1),
-            persistence,
-            lacunarity
-        );
+        const float plateauFormation =
+            plateauLevel * plateauMask * 0.12f;
 
         const float fineDetail =
-            (detail - 0.5f) *
-            m_settings.heightScale *
-            0.055f;
+            (detailNoise - 0.5f) *
+            4.0f *
+            s.detailStrength;
 
-        const float mediumDetail = FractalNoise(
-            worldX * detailScale * 0.28f,
-            worldZ * detailScale * 0.28f,
-            seed + 120u,
-            3,
-            0.5f,
-            2.0f
-        );
+        const float mediumDetail =
+            (broadNoise - 0.5f) * 3.5f;
 
-        const float surfaceVariation =
-            (mediumDetail - 0.5f) *
-            m_settings.heightScale *
-            0.12f;
+        const float plainsBlend =
+            Saturate(plainsMask * s.plainsStrength);
 
-        const float height =
-            m_settings.baseHeight +
-            broadTerrain +
+        const float terrainHeight =
+            broadLand +
             rollingTerrain +
             foothills +
             mountainHeight -
-            valleyCut +
-            cliffFormation +
+            valleyCut -
+            canyonCut +
+            plateauFormation +
             fineDetail +
-            surfaceVariation;
+            mediumDetail +
+            plainsVariation;
 
-        return height;
+        const float flattenedHeight =
+            broadLand +
+            (rollingTerrain + fineDetail + mediumDetail) *
+            (1.0f - plainsBlend * 0.82f) +
+            plainsVariation;
+
+        return s.baseHeight +
+            Interpolate(flattenedHeight, terrainHeight, 1.0f - plainsBlend);
     }
 }

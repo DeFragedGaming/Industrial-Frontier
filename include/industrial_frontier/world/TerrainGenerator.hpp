@@ -11,8 +11,8 @@ namespace industrial_frontier
         float heightScale = 35.0f;
         float baseHeight = -5.0f;
 
-        float continentalScale = 0.0015f;
-        float mountainScale = 0.003f;
+        float continentalScale = 0.0012f;
+        float mountainScale = 0.0022f;
         float detailScale = 0.012f;
 
         int noiseOctaves = 5;
@@ -21,6 +21,25 @@ namespace industrial_frontier
 
         float mountainStrength = 1.0f;
         float valleyStrength = 0.65f;
+
+        float plainsStrength = 1.0f;
+        float mountainRangeStrength = 1.0f;
+        float foothillStrength = 1.0f;
+
+        float canyonStrength = 1.0f;
+        float canyonScale = 0.0018f;
+        float canyonWidth = 0.16f;
+        float canyonDepth = 22.0f;
+
+        float valleyScale = 0.0010f;
+        float valleyWidth = 0.30f;
+        float valleyDepth = 12.0f;
+
+        float plateauStrength = 0.45f;
+        float detailStrength = 1.0f;
+
+        float mountainHeight = 58.0f;
+        float plainsFlatness = 0.82f;
     };
 
     class TerrainGenerator
