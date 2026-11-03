@@ -1,8 +1,11 @@
-
 # Build output
 /build/
+/build-release/
 /out/
 /cmake-build-*/
+
+# Distribution packages
+/dist/
 
 # Visual Studio
 .vs/
@@ -47,10 +50,8 @@ Desktop.ini
 *.bak
 *.swp
 
-==========================================
-
-Developer Presence - Excluded for now
-
-==========================================
+# ==========================================
+# Developer Presence - Excluded for now
+# ==========================================
 
 /tools/DeveloperPresence/
