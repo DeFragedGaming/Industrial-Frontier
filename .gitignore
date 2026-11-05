@@ -3,6 +3,7 @@
 /build-release/
 /out/
 /cmake-build-*/
+/showcase
 
 # Distribution packages
 /dist/
