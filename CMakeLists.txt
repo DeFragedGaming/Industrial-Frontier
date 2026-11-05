@@ -33,10 +33,18 @@ find_package(OpenGL REQUIRED)
 
 add_executable(IndustrialFrontier
     src/main.cpp
+
     src/core/Application.cpp
+    src/core/GameFlow.cpp
+
     src/player/PlayerController.cpp
+
     src/renderer/Renderer.cpp
     src/renderer/Shader.cpp
+
+    src/ui/UIRenderer.cpp
+    src/ui/MainMenu.cpp
+
     src/world/TerrainGenerator.cpp
     src/world/TerrainChunk.cpp
     src/world/TerrainWorld.cpp
@@ -45,7 +53,7 @@ add_executable(IndustrialFrontier
 
 target_include_directories(IndustrialFrontier
     PRIVATE
-        ${PROJECT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 target_link_libraries(IndustrialFrontier
@@ -54,41 +62,41 @@ target_link_libraries(IndustrialFrontier
         OpenGL::GL
 )
 
-target_compile_definitions(IndustrialFrontier
-    PRIVATE
-        SDL_MAIN_HANDLED
-)
-
 if(MSVC)
-    target_compile_options(IndustrialFrontier PRIVATE
-        /W4
-        /permissive-
-        /Zc:preprocessor
-        /EHsc
+    target_compile_options(IndustrialFrontier
+        PRIVATE
+            /W4
+            /permissive-
+    )
+else()
+    target_compile_options(IndustrialFrontier
+        PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
     )
 endif()
+
+add_custom_command(
+    TARGET IndustrialFrontier
+    POST_BUILD
+
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets"
+        "$<TARGET_FILE_DIR:IndustrialFrontier>/assets"
+
+    COMMENT "Copying Industrial Frontier assets"
+)
 
 if(WIN32)
-    add_custom_command(TARGET IndustrialFrontier POST_BUILD
+    add_custom_command(
+        TARGET IndustrialFrontier
+        POST_BUILD
+
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_FILE:SDL3::SDL3>
-            $<TARGET_FILE_DIR:IndustrialFrontier>
+            "$<TARGET_FILE:SDL3::SDL3>"
+            "$<TARGET_FILE_DIR:IndustrialFrontier>"
+
+        COMMENT "Copying SDL3 runtime"
     )
 endif()
-
-add_custom_command(TARGET IndustrialFrontier POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${PROJECT_SOURCE_DIR}/assets
-        $<TARGET_FILE_DIR:IndustrialFrontier>/assets
-)
-
-message(STATUS "Industrial Frontier configuration")
-message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
-message(STATUS "SDL3 Version: 3.4.18")
-message(STATUS "OpenGL: Enabled")
-message(STATUS "Shader System: Enabled")
-message(STATUS "Lighting Shaders: Enabled")
-message(STATUS "3D Renderer: Enabled")
-message(STATUS "Procedural Terrain: Enabled")
-message(STATUS "Player Controller: Enabled")
-message(STATUS "Camera Mode: First Person Only")

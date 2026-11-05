@@ -87,19 +87,34 @@ namespace industrial_frontier
 
         Vec3 Normalize(const Vec3& value)
         {
-            const float length = std::sqrt(
-                Dot(value, value)
-            );
+            const float length = std::sqrt(Dot(value, value));
 
             if (length <= 0.00001f)
             {
                 return {};
             }
 
-            return Multiply(
-                value,
-                1.0f / length
-            );
+            return Multiply(value, 1.0f / length);
+        }
+
+        float SmoothStep(float value)
+        {
+            const float t = std::clamp(value, 0.0f, 1.0f);
+            return t * t * (3.0f - 2.0f * t);
+        }
+
+        float Lerp(float a, float b, float t)
+        {
+            return a + (b - a) * t;
+        }
+
+        Vec3 Lerp(const Vec3& a, const Vec3& b, float t)
+        {
+            return {
+                Lerp(a.x, b.x, t),
+                Lerp(a.y, b.y, t),
+                Lerp(a.z, b.z, t)
+            };
         }
 
         Mat4 Identity()
@@ -114,9 +129,7 @@ namespace industrial_frontier
             return result;
         }
 
-        Mat4 MultiplyMatrices(
-            const Mat4& a,
-            const Mat4& b)
+        Mat4 MultiplyMatrices(const Mat4& a, const Mat4& b)
         {
             Mat4 result{};
 
@@ -144,12 +157,10 @@ namespace industrial_frontier
         {
             Mat4 result{};
 
-            const float tangent = std::tan(
-                fieldOfView * 0.5f
-            );
+            const float tangent =
+                std::tan(fieldOfView * 0.5f);
 
-            if (aspectRatio <= 0.0f ||
-                tangent <= 0.0f)
+            if (aspectRatio <= 0.0f || tangent <= 0.0f)
             {
                 return Identity();
             }
@@ -186,10 +197,7 @@ namespace industrial_frontier
                 Cross(forward, worldUp)
             );
 
-            const Vec3 up = Cross(
-                right,
-                forward
-            );
+            const Vec3 up = Cross(right, forward);
 
             Mat4 result = Identity();
 
@@ -205,14 +213,9 @@ namespace industrial_frontier
             result.values[9] = up.z;
             result.values[10] = -forward.z;
 
-            result.values[12] =
-                -Dot(right, position);
-
-            result.values[13] =
-                -Dot(up, position);
-
-            result.values[14] =
-                Dot(forward, position);
+            result.values[12] = -Dot(right, position);
+            result.values[13] = -Dot(up, position);
+            result.values[14] = Dot(forward, position);
 
             return result;
         }
@@ -265,9 +268,7 @@ namespace industrial_frontier
             );
 
         template<typename T>
-        bool LoadGLFunction(
-            T& function,
-            const char* name)
+        bool LoadGLFunction(T& function, const char* name)
         {
             function = reinterpret_cast<T>(
                 SDL_GL_GetProcAddress(name)
@@ -315,25 +316,26 @@ namespace industrial_frontier
         TerrainGenerationWorker terrainWorker;
         PlayerController player;
 
-        std::unordered_map<
-            std::uint64_t,
-            GPUChunk
-        > gpuChunks;
+        std::unordered_map<std::uint64_t, GPUChunk> gpuChunks;
 
         Vec3 cameraPosition{};
-
-        Vec3 cameraForward{
-            0.0f,
-            0.0f,
-            -1.0f
-        };
-
+        Vec3 cameraForward{0.0f, 0.0f, -1.0f};
         Vec3 cameraTarget{};
+
+        Vec3 playerCameraPosition{};
+        Vec3 playerCameraForward{0.0f, 0.0f, -1.0f};
+
+        Vec3 cinematicPosition{};
+        Vec3 cinematicTarget{};
+
+        float cinematicTime = 0.0f;
 
         int currentChunkX = 0;
         int currentChunkZ = 0;
 
+        bool cinematicMode = false;
         bool initialized = false;
+
         bool LoadFunctions()
         {
             bool success = true;
@@ -391,9 +393,7 @@ namespace industrial_frontier
             return success;
         }
 
-        std::uint64_t MakeChunkKey(
-            int x,
-            int z) const
+        std::uint64_t MakeChunkKey(int x, int z) const
         {
             return
                 (
@@ -408,65 +408,40 @@ namespace industrial_frontier
         {
             if (chunk.indexBuffer != 0)
             {
-                DeleteBuffers(
-                    1,
-                    &chunk.indexBuffer
-                );
-
+                DeleteBuffers(1, &chunk.indexBuffer);
                 chunk.indexBuffer = 0;
             }
 
             if (chunk.vertexBuffer != 0)
             {
-                DeleteBuffers(
-                    1,
-                    &chunk.vertexBuffer
-                );
-
+                DeleteBuffers(1, &chunk.vertexBuffer);
                 chunk.vertexBuffer = 0;
             }
 
             if (chunk.vertexArray != 0)
             {
-                DeleteVertexArrays(
-                    1,
-                    &chunk.vertexArray
-                );
-
+                DeleteVertexArrays(1, &chunk.vertexArray);
                 chunk.vertexArray = 0;
             }
+
+            chunk.indexCount = 0;
         }
 
         bool UploadChunk(const TerrainChunk& chunk)
         {
-            const auto& vertices =
-                chunk.GetVertices();
+            const auto& vertices = chunk.GetVertices();
+            const auto& indices = chunk.GetIndices();
 
-            const auto& indices =
-                chunk.GetIndices();
-
-            if (vertices.empty() ||
-                indices.empty())
+            if (vertices.empty() || indices.empty())
             {
                 return false;
             }
 
             GPUChunk gpuChunk{};
 
-            GenVertexArrays(
-                1,
-                &gpuChunk.vertexArray
-            );
-
-            GenBuffers(
-                1,
-                &gpuChunk.vertexBuffer
-            );
-
-            GenBuffers(
-                1,
-                &gpuChunk.indexBuffer
-            );
+            GenVertexArrays(1, &gpuChunk.vertexArray);
+            GenBuffers(1, &gpuChunk.vertexBuffer);
+            GenBuffers(1, &gpuChunk.indexBuffer);
 
             if (gpuChunk.vertexArray == 0 ||
                 gpuChunk.vertexBuffer == 0 ||
@@ -476,9 +451,7 @@ namespace industrial_frontier
                 return false;
             }
 
-            BindVertexArray(
-                gpuChunk.vertexArray
-            );
+            BindVertexArray(gpuChunk.vertexArray);
 
             BindBuffer(
                 GL_ARRAY_BUFFER,
@@ -488,8 +461,7 @@ namespace industrial_frontier
             BufferData(
                 GL_ARRAY_BUFFER,
                 static_cast<GLsizeiptr>(
-                    vertices.size() *
-                    sizeof(TerrainVertex)
+                    vertices.size() * sizeof(TerrainVertex)
                 ),
                 vertices.data(),
                 GL_STATIC_DRAW
@@ -503,17 +475,14 @@ namespace industrial_frontier
             BufferData(
                 GL_ELEMENT_ARRAY_BUFFER,
                 static_cast<GLsizeiptr>(
-                    indices.size() *
-                    sizeof(unsigned int)
+                    indices.size() * sizeof(unsigned int)
                 ),
                 indices.data(),
                 GL_STATIC_DRAW
             );
 
             const GLsizei stride =
-                static_cast<GLsizei>(
-                    sizeof(TerrainVertex)
-                );
+                static_cast<GLsizei>(sizeof(TerrainVertex));
 
             EnableVertexAttribArray(0);
 
@@ -524,10 +493,7 @@ namespace industrial_frontier
                 GL_FALSE,
                 stride,
                 reinterpret_cast<const void*>(
-                    offsetof(
-                        TerrainVertex,
-                        position
-                    )
+                    offsetof(TerrainVertex, position)
                 )
             );
 
@@ -540,10 +506,7 @@ namespace industrial_frontier
                 GL_FALSE,
                 stride,
                 reinterpret_cast<const void*>(
-                    offsetof(
-                        TerrainVertex,
-                        normal
-                    )
+                    offsetof(TerrainVertex, normal)
                 )
             );
 
@@ -556,28 +519,22 @@ namespace industrial_frontier
                 GL_FALSE,
                 stride,
                 reinterpret_cast<const void*>(
-                    offsetof(
-                        TerrainVertex,
-                        color
-                    )
+                    offsetof(TerrainVertex, color)
                 )
             );
 
             BindVertexArray(0);
 
             gpuChunk.indexCount =
-                static_cast<GLsizei>(
-                    indices.size()
-                );
+                static_cast<GLsizei>(indices.size());
 
-            const auto result =
-                gpuChunks.emplace(
-                    MakeChunkKey(
-                        chunk.GetChunkX(),
-                        chunk.GetChunkZ()
-                    ),
-                    gpuChunk
-                );
+            const auto result = gpuChunks.emplace(
+                MakeChunkKey(
+                    chunk.GetChunkX(),
+                    chunk.GetChunkZ()
+                ),
+                gpuChunk
+            );
 
             if (!result.second)
             {
@@ -598,7 +555,7 @@ namespace industrial_frontier
             gpuChunks.clear();
         }
 
-        void UpdateCameraPose()
+        void UpdatePlayerCameraPose()
         {
             float forwardX = 0.0f;
             float forwardY = 0.0f;
@@ -610,24 +567,135 @@ namespace industrial_frontier
                 forwardZ
             );
 
-            cameraForward = Normalize({
+            playerCameraForward = Normalize({
                 forwardX,
                 forwardY,
                 forwardZ
             });
 
-            const Vec3 eyePosition{
-                player.GetX(),
-                player.GetY() +
-                    player.GetEyeHeight(),
-                player.GetZ()
-            };
-
-            cameraPosition = eyePosition;
-            cameraTarget = Add(
-                cameraPosition,
-                cameraForward
+            player.GetFirstPersonCameraPosition(
+                playerCameraPosition.x,
+                playerCameraPosition.y,
+                playerCameraPosition.z
             );
+
+            if (!cinematicMode)
+            {
+                cameraPosition = playerCameraPosition;
+                cameraForward = playerCameraForward;
+                cameraTarget = Add(
+                    cameraPosition,
+                    cameraForward
+                );
+            }
+        }
+
+        void UpdateActiveCamera()
+        {
+            if (cinematicMode)
+            {
+                cameraPosition = cinematicPosition;
+                cameraTarget = cinematicTarget;
+                cameraForward = Normalize(
+                    Subtract(cameraTarget, cameraPosition)
+                );
+            }
+            else
+            {
+                cameraPosition = playerCameraPosition;
+                cameraForward = playerCameraForward;
+                cameraTarget = Add(
+                    cameraPosition,
+                    cameraForward
+                );
+            }
+        }
+
+        void UpdateCinematicPose(
+            float deltaTime,
+            bool introduction,
+            float progress)
+        {
+            cinematicTime += std::max(deltaTime, 0.0f);
+
+            const Vec3 landingPosition = playerCameraPosition;
+
+            if (introduction)
+            {
+                const float t = SmoothStep(progress);
+
+                const Vec3 startingPosition{
+                    landingPosition.x - 145.0f,
+                    landingPosition.y + 185.0f,
+                    landingPosition.z + 145.0f
+                };
+
+                const Vec3 approachPosition{
+                    landingPosition.x - 42.0f,
+                    landingPosition.y + 36.0f,
+                    landingPosition.z + 48.0f
+                };
+
+                const Vec3 finalPosition{
+                    landingPosition.x - 5.0f,
+                    landingPosition.y + 5.0f,
+                    landingPosition.z + 7.0f
+                };
+
+                if (t < 0.75f)
+                {
+                    cinematicPosition = Lerp(
+                        startingPosition,
+                        approachPosition,
+                        SmoothStep(t / 0.75f)
+                    );
+                }
+                else
+                {
+                    cinematicPosition = Lerp(
+                        approachPosition,
+                        finalPosition,
+                        SmoothStep((t - 0.75f) / 0.25f)
+                    );
+                }
+
+                const Vec3 distantTarget{
+                    landingPosition.x + 28.0f,
+                    landingPosition.y,
+                    landingPosition.z - 28.0f
+                };
+
+                cinematicTarget = Lerp(
+                    distantTarget,
+                    landingPosition,
+                    t
+                );
+            }
+            else
+            {
+                const float angle =
+                    cinematicTime * 0.075f;
+
+                const float radius = 95.0f;
+
+                cinematicPosition = {
+                    landingPosition.x +
+                        std::cos(angle) * radius,
+                    landingPosition.y +
+                        72.0f +
+                        std::sin(cinematicTime * 0.18f) * 7.0f,
+                    landingPosition.z +
+                        std::sin(angle) * radius
+                };
+
+                cinematicTarget = {
+                    landingPosition.x,
+                    landingPosition.y - 4.0f,
+                    landingPosition.z
+                };
+            }
+
+            UpdateActiveCamera();
         }
 
         void SetLighting()
@@ -676,21 +744,23 @@ namespace industrial_frontier
             const float chunkSize =
                 terrainWorld.GetChunkSize();
 
-            currentChunkX =
-                static_cast<int>(
-                    std::floor(
-                        player.GetX() /
-                        chunkSize
-                    )
-                );
+            if (chunkSize <= 0.0f)
+            {
+                return;
+            }
 
-            currentChunkZ =
-                static_cast<int>(
-                    std::floor(
-                        player.GetZ() /
-                        chunkSize
-                    )
-                );
+            const Vec3 center =
+                cinematicMode
+                    ? cinematicTarget
+                    : playerCameraPosition;
+
+            currentChunkX = static_cast<int>(
+                std::floor(center.x / chunkSize)
+            );
+
+            currentChunkZ = static_cast<int>(
+                std::floor(center.z / chunkSize)
+            );
 
             terrainWorker.SetCenter(
                 currentChunkX,
@@ -700,50 +770,32 @@ namespace industrial_frontier
 
         void RemoveDistantChunks()
         {
-            for (
-                auto iterator =
-                    gpuChunks.begin();
-
-                iterator != gpuChunks.end();
-            )
+            for (auto iterator = gpuChunks.begin();
+                 iterator != gpuChunks.end();)
             {
                 const int chunkX =
-                    static_cast<int>(
-                        static_cast<std::int32_t>(
-                            iterator->first >> 32
-                        )
+                    static_cast<std::int32_t>(
+                        iterator->first >> 32
                     );
 
                 const int chunkZ =
-                    static_cast<int>(
-                        static_cast<std::int32_t>(
-                            iterator->first &
-                            0xFFFFFFFFu
-                        )
+                    static_cast<std::int32_t>(
+                        iterator->first & 0xFFFFFFFFu
                     );
 
-                if (
-                    std::abs(
-                        chunkX - currentChunkX
-                    ) > UnloadRadius ||
-                    std::abs(
-                        chunkZ - currentChunkZ
-                    ) > UnloadRadius
-                )
+                if (std::abs(chunkX - currentChunkX) >
+                        UnloadRadius ||
+                    std::abs(chunkZ - currentChunkZ) >
+                        UnloadRadius)
                 {
-                    DeleteChunk(
-                        iterator->second
-                    );
+                    DeleteChunk(iterator->second);
 
                     terrainWorld.RemoveChunk(
                         chunkX,
                         chunkZ
                     );
 
-                    iterator =
-                        gpuChunks.erase(
-                            iterator
-                        );
+                    iterator = gpuChunks.erase(iterator);
                 }
                 else
                 {
@@ -754,44 +806,28 @@ namespace industrial_frontier
 
         void RequestNearbyChunks()
         {
-            for (
-                int z = -LoadRadius;
-                z <= LoadRadius;
-                ++z
-            )
+            for (int z = -LoadRadius;
+                 z <= LoadRadius;
+                 ++z)
             {
-                for (
-                    int x = -LoadRadius;
-                    x <= LoadRadius;
-                    ++x
-                )
+                for (int x = -LoadRadius;
+                     x <= LoadRadius;
+                     ++x)
                 {
-                    const int chunkX =
-                        currentChunkX + x;
-
-                    const int chunkZ =
-                        currentChunkZ + z;
+                    const int chunkX = currentChunkX + x;
+                    const int chunkZ = currentChunkZ + z;
 
                     const std::uint64_t key =
-                        MakeChunkKey(
-                            chunkX,
-                            chunkZ
-                        );
+                        MakeChunkKey(chunkX, chunkZ);
 
-                    if (
-                        gpuChunks.find(key) !=
-                        gpuChunks.end()
-                    )
+                    if (gpuChunks.find(key) != gpuChunks.end())
                     {
                         continue;
                     }
 
-                    if (
-                        terrainWorld.GetChunk(
+                    if (terrainWorld.GetChunk(
                             chunkX,
-                            chunkZ
-                        ) != nullptr
-                    )
+                            chunkZ) != nullptr)
                     {
                         continue;
                     }
@@ -811,38 +847,23 @@ namespace industrial_frontier
 
             while (
                 uploaded < MaxUploadsPerFrame &&
-                terrainWorker.TryGetCompletedChunk(
-                    chunk
-                )
+                terrainWorker.TryGetCompletedChunk(chunk)
             )
             {
-                const int dx =
-                    chunk.GetChunkX() -
-                    currentChunkX;
+                const int chunkX = chunk.GetChunkX();
+                const int chunkZ = chunk.GetChunkZ();
 
-                const int dz =
-                    chunk.GetChunkZ() -
-                    currentChunkZ;
+                const int dx = chunkX - currentChunkX;
+                const int dz = chunkZ - currentChunkZ;
 
-                if (
-                    std::abs(dx) > UnloadRadius ||
-                    std::abs(dz) > UnloadRadius
-                )
+                if (std::abs(dx) > UnloadRadius ||
+                    std::abs(dz) > UnloadRadius)
                 {
                     continue;
                 }
 
-                const int chunkX =
-                    chunk.GetChunkX();
-
-                const int chunkZ =
-                    chunk.GetChunkZ();
-
-                if (
-                    !terrainWorld.AddGeneratedChunk(
-                        std::move(chunk)
-                    )
-                )
+                if (!terrainWorld.AddGeneratedChunk(
+                        std::move(chunk)))
                 {
                     continue;
                 }
@@ -853,10 +874,8 @@ namespace industrial_frontier
                         chunkZ
                     );
 
-                if (
-                    storedChunk == nullptr ||
-                    !UploadChunk(*storedChunk)
-                )
+                if (storedChunk == nullptr ||
+                    !UploadChunk(*storedChunk))
                 {
                     terrainWorld.RemoveChunk(
                         chunkX,
@@ -909,10 +928,8 @@ namespace industrial_frontier
                 << "Load radius: "
                 << LoadRadius
                 << ", target chunks: "
-                << (
-                    (LoadRadius * 2 + 1) *
-                    (LoadRadius * 2 + 1)
-                )
+                << (LoadRadius * 2 + 1) *
+                   (LoadRadius * 2 + 1)
                 << ".\n";
 
             return true;
@@ -922,13 +939,10 @@ namespace industrial_frontier
         {
             terrainWorker.Stop();
         }
-
     };
 
     Renderer::Renderer()
-        : m_impl(
-            std::make_unique<Impl>()
-        )
+        : m_impl(std::make_unique<Impl>())
     {
     }
 
@@ -941,8 +955,7 @@ namespace industrial_frontier
     {
         if (!m_impl)
         {
-            m_impl =
-                std::make_unique<Impl>();
+            m_impl = std::make_unique<Impl>();
         }
 
         if (m_impl->initialized)
@@ -955,12 +968,9 @@ namespace industrial_frontier
             return false;
         }
 
-        if (
-            !m_impl->terrainShader.LoadFromFiles(
+        if (!m_impl->terrainShader.LoadFromFiles(
                 "assets/shaders/terrain.vert",
-                "assets/shaders/terrain.frag"
-            )
-        )
+                "assets/shaders/terrain.frag"))
         {
             std::cerr
                 << "Failed to load terrain shaders.\n";
@@ -986,12 +996,19 @@ namespace industrial_frontier
             m_impl->terrainWorld.GetGenerator()
         );
 
-        m_impl->UpdateCameraPose();
+        m_impl->UpdatePlayerCameraPose();
+
+        m_impl->cinematicPosition =
+            m_impl->playerCameraPosition;
+
+        m_impl->cinematicTarget = Add(
+            m_impl->cinematicPosition,
+            m_impl->playerCameraForward
+        );
 
         if (!m_impl->StartTerrainGeneration())
         {
             m_impl->terrainShader.Shutdown();
-
             return false;
         }
 
@@ -999,7 +1016,8 @@ namespace industrial_frontier
 
         std::cout
             << "Renderer initialized in first-person mode "
-            << "with terrain streaming.\n";
+            << "with independent cinematic camera "
+            << "and terrain streaming.\n";
 
         return true;
     }
@@ -1011,10 +1029,7 @@ namespace industrial_frontier
         bool sprint,
         bool jumpPressed)
     {
-        if (
-            !m_impl ||
-            !m_impl->initialized
-        )
+        if (!m_impl || !m_impl->initialized)
         {
             return;
         }
@@ -1032,17 +1047,15 @@ namespace industrial_frontier
             m_impl->terrainWorld.GetGenerator()
         );
 
-        m_impl->UpdateCameraPose();
+        m_impl->UpdatePlayerCameraPose();
+        m_impl->UpdateActiveCamera();
     }
 
     void Renderer::RotatePlayerCamera(
         float deltaX,
         float deltaY)
     {
-        if (
-            !m_impl ||
-            !m_impl->initialized
-        )
+        if (!m_impl || !m_impl->initialized)
         {
             return;
         }
@@ -1052,25 +1065,59 @@ namespace industrial_frontier
             deltaY
         );
 
-        m_impl->UpdateCameraPose();
+        m_impl->UpdatePlayerCameraPose();
+        m_impl->UpdateActiveCamera();
     }
 
-    void Renderer::Render(
-        int width,
-        int height)
+    void Renderer::SetCinematicMode(bool enabled)
     {
-        if (
-            !m_impl ||
+        if (!m_impl || !m_impl->initialized)
+        {
+            return;
+        }
+
+        if (m_impl->cinematicMode == enabled)
+        {
+            return;
+        }
+
+        m_impl->cinematicMode = enabled;
+
+        m_impl->UpdatePlayerCameraPose();
+        m_impl->UpdateActiveCamera();
+    }
+
+    void Renderer::UpdateCinematic(
+        float deltaTime,
+        bool introduction,
+        float progress)
+    {
+        if (!m_impl ||
+            !m_impl->initialized ||
+            !m_impl->cinematicMode)
+        {
+            return;
+        }
+
+        m_impl->UpdateCinematicPose(
+            deltaTime,
+            introduction,
+            std::clamp(progress, 0.0f, 1.0f)
+        );
+    }
+
+    void Renderer::Render(int width, int height)
+    {
+        if (!m_impl ||
             !m_impl->initialized ||
             width <= 0 ||
-            height <= 0
-        )
+            height <= 0)
         {
             return;
         }
 
         m_impl->StreamTerrain();
-        m_impl->UpdateCameraPose();
+        m_impl->UpdateActiveCamera();
 
         glViewport(
             0,
@@ -1084,40 +1131,27 @@ namespace industrial_frontier
             GL_DEPTH_BUFFER_BIT
         );
 
-        const Mat4 projection =
-            Perspective(
-                70.0f * DegreesToRadians,
-                static_cast<float>(width) /
-                    static_cast<float>(height),
-                0.1f,
-                2000.0f
-            );
+        const Mat4 projection = Perspective(
+            70.0f * DegreesToRadians,
+            static_cast<float>(width) /
+                static_cast<float>(height),
+            0.1f,
+            2000.0f
+        );
 
-        const Mat4 view =
-            LookAt(
-                m_impl->cameraPosition,
-                m_impl->cameraTarget,
-                {
-                    0.0f,
-                    1.0f,
-                    0.0f
-                }
-            );
+        const Mat4 view = LookAt(
+            m_impl->cameraPosition,
+            m_impl->cameraTarget,
+            {0.0f, 1.0f, 0.0f}
+        );
 
-        const Mat4 model =
-            Identity();
+        const Mat4 model = Identity();
 
         const Mat4 viewProjection =
-            MultiplyMatrices(
-                projection,
-                view
-            );
+            MultiplyMatrices(projection, view);
 
         const Mat4 mvp =
-            MultiplyMatrices(
-                viewProjection,
-                model
-            );
+            MultiplyMatrices(viewProjection, model);
 
         m_impl->terrainShader.Use();
 
@@ -1133,10 +1167,7 @@ namespace industrial_frontier
 
         m_impl->SetLighting();
 
-        for (
-            const auto& entry :
-                m_impl->gpuChunks
-        )
+        for (const auto& entry : m_impl->gpuChunks)
         {
             const Impl::GPUChunk& chunk =
                 entry.second;
@@ -1154,7 +1185,6 @@ namespace industrial_frontier
         }
 
         m_impl->BindVertexArray(0);
-
     }
 
     void Renderer::Shutdown()
@@ -1165,13 +1195,12 @@ namespace industrial_frontier
         }
 
         m_impl->StopTerrainGeneration();
-
         m_impl->ClearGPUChunks();
-
         m_impl->terrainWorld.Clear();
-
         m_impl->terrainShader.Shutdown();
 
         m_impl->initialized = false;
+        m_impl->cinematicMode = false;
+        m_impl->cinematicTime = 0.0f;
     }
 }

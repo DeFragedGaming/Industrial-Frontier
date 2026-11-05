@@ -24,7 +24,18 @@ namespace industrial_frontier
             bool jumpPressed
         );
 
-        void RotatePlayerCamera(float deltaX, float deltaY);
+        void RotatePlayerCamera(
+            float deltaX,
+            float deltaY
+        );
+
+        void SetCinematicMode(bool enabled);
+
+        void UpdateCinematic(
+            float deltaTime,
+            bool introduction,
+            float progress
+        );
 
         void Render(int width, int height);
         void Shutdown();

@@ -1,7 +1,10 @@
 
 #pragma once
 
+#include "industrial_frontier/core/GameFlow.hpp"
 #include "industrial_frontier/renderer/Renderer.hpp"
+#include "industrial_frontier/ui/MainMenu.hpp"
+#include "industrial_frontier/ui/UIRenderer.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -24,7 +27,9 @@ namespace industrial_frontier
 
     private:
         void HandleEvent(const SDL_Event& event);
+        void HandleMenuAction(MenuAction action);
         void SetMouseCapture(bool captured);
+        void UpdateCinematic(float deltaTime);
 
         bool m_initialized = false;
         bool m_running = false;
@@ -39,11 +44,19 @@ namespace industrial_frontier
 
         float m_mouseDeltaX = 0.0f;
         float m_mouseDeltaY = 0.0f;
+        float m_mouseX = 0.0f;
+        float m_mouseY = 0.0f;
+
+        float m_menuCameraTime = 0.0f;
+        float m_planetfallProgress = 0.0f;
 
         Uint64 m_lastFrameTime = 0;
 
         std::string m_applicationName = "Industrial Frontier";
 
         Renderer m_renderer;
+        UIRenderer m_uiRenderer;
+        MainMenu m_mainMenu;
+        GameFlow m_gameFlow;
     };
 }
