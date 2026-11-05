@@ -16,15 +16,15 @@ namespace industrial_frontier
 
         bool Initialize();
 
-        void UpdateCamera(
+        void UpdatePlayer(
             float deltaTime,
             float forwardInput,
             float rightInput,
-            float verticalInput,
-            bool sprint
+            bool sprint,
+            bool jumpPressed
         );
 
-        void RotateCamera(float deltaX, float deltaY);
+        void RotatePlayerCamera(float deltaX, float deltaY);
 
         void Render(int width, int height);
         void Shutdown();

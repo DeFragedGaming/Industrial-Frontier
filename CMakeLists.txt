@@ -1,3 +1,4 @@
+
 cmake_minimum_required(VERSION 3.25)
 
 project(IndustrialFrontier
@@ -33,6 +34,7 @@ find_package(OpenGL REQUIRED)
 add_executable(IndustrialFrontier
     src/main.cpp
     src/core/Application.cpp
+    src/player/PlayerController.cpp
     src/renderer/Renderer.cpp
     src/renderer/Shader.cpp
     src/world/TerrainGenerator.cpp
@@ -88,3 +90,5 @@ message(STATUS "Shader System: Enabled")
 message(STATUS "Lighting Shaders: Enabled")
 message(STATUS "3D Renderer: Enabled")
 message(STATUS "Procedural Terrain: Enabled")
+message(STATUS "Player Controller: Enabled")
+message(STATUS "Camera Mode: First Person Only")

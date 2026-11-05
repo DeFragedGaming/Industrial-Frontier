@@ -140,8 +140,10 @@ namespace industrial_frontier
         m_lastFrameTime = SDL_GetPerformanceCounter();
 
         std::cout << "Graphics initialization complete.\n";
-        std::cout << "3D scene ready.\n";
-        std::cout << "Camera controls enabled.\n";
+        std::cout << "Player controller initialized.\n";
+        std::cout << "WASD: Move | Mouse: Look | Shift: Sprint\n";
+        std::cout << "Space: Jump\n";
+        std::cout << "Escape: Release mouse | Left-click: Capture mouse\n";
 
         return true;
     }
@@ -184,8 +186,12 @@ namespace industrial_frontier
                 break;
 
             case SDL_EVENT_KEY_DOWN:
-                if (event.key.scancode == SDL_SCANCODE_ESCAPE &&
-                    !event.key.repeat)
+                if (event.key.repeat)
+                {
+                    break;
+                }
+
+                if (event.key.scancode == SDL_SCANCODE_ESCAPE)
                 {
                     if (m_mouseCaptured)
                     {
@@ -195,6 +201,10 @@ namespace industrial_frontier
                     {
                         m_running = false;
                     }
+                }
+                else if (event.key.scancode == SDL_SCANCODE_SPACE)
+                {
+                    m_jumpRequested = true;
                 }
                 break;
 
@@ -236,10 +246,6 @@ namespace industrial_frontier
 
         m_running = true;
 
-        std::cout << "Industrial Frontier is running.\n";
-        std::cout << "WASD: Move | Mouse: Look | Shift: Sprint\n";
-        std::cout << "Space: Up | Ctrl: Down | Escape: Release mouse\n";
-
         SDL_Event event;
 
         const double performanceFrequency =
@@ -272,26 +278,23 @@ namespace industrial_frontier
                 (keyboardState[SDL_SCANCODE_D] ? 1.0f : 0.0f) -
                 (keyboardState[SDL_SCANCODE_A] ? 1.0f : 0.0f);
 
-            const float verticalInput =
-                (keyboardState[SDL_SCANCODE_SPACE] ? 1.0f : 0.0f) -
-                ((keyboardState[SDL_SCANCODE_LCTRL] ||
-                  keyboardState[SDL_SCANCODE_RCTRL]) ? 1.0f : 0.0f);
-
             const bool sprint =
                 keyboardState[SDL_SCANCODE_LSHIFT] ||
                 keyboardState[SDL_SCANCODE_RSHIFT];
 
-            m_renderer.UpdateCamera(
+            m_renderer.UpdatePlayer(
                 deltaTime,
                 forwardInput,
                 rightInput,
-                verticalInput,
-                sprint
+                sprint,
+                m_jumpRequested
             );
+
+            m_jumpRequested = false;
 
             if (m_mouseCaptured)
             {
-                m_renderer.RotateCamera(
+                m_renderer.RotatePlayerCamera(
                     m_mouseDeltaX,
                     m_mouseDeltaY
                 );

@@ -29,6 +29,7 @@ namespace industrial_frontier
         bool m_initialized = false;
         bool m_running = false;
         bool m_mouseCaptured = false;
+        bool m_jumpRequested = false;
 
         SDL_Window* m_window = nullptr;
         SDL_GLContext m_glContext = nullptr;
