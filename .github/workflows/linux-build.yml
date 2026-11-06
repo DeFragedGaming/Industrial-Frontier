@@ -1,0 +1,186 @@
+
+name: Industrial Frontier - Linux Showcase v5
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-linux:
+    name: Build Linux x64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout Industrial Frontier
+        uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            ninja-build \
+            pkg-config \
+            libgl1-mesa-dev \
+            libegl1-mesa-dev \
+            libx11-dev \
+            libxext-dev \
+            libxrandr-dev \
+            libxcursor-dev \
+            libxfixes-dev \
+            libxi-dev \
+            libxss-dev \
+            libxkbcommon-dev \
+            libwayland-dev \
+            libdrm-dev \
+            libgbm-dev \
+            libudev-dev \
+            libdbus-1-dev \
+            libasound2-dev \
+            libpulse-dev
+
+      - name: Display compiler versions
+        run: |
+          cmake --version
+          g++ --version
+          ninja --version
+
+      - name: Configure Linux Release
+        run: |
+          cmake -S . -B build-linux \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Compile Industrial Frontier
+        run: |
+          cmake --build build-linux --parallel 4
+
+      - name: Package Linux Release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PACKAGE_NAME="IndustrialFrontier-v5-Linux-x64"
+          PACKAGE_DIR="releases/$PACKAGE_NAME"
+
+          mkdir -p "$PACKAGE_DIR"
+
+          install -m 755 \
+            build-linux/IndustrialFrontier \
+            "$PACKAGE_DIR/IndustrialFrontier"
+
+          cp -r assets "$PACKAGE_DIR/assets"
+
+          SDL_LIB="$(find build-linux -type f -name 'libSDL3.so*' -print -quit)"
+
+          if [ -z "$SDL_LIB" ]; then
+            echo "SDL3 shared library was not found."
+            exit 1
+          fi
+
+          SDL_SONAME="$(readelf -d "$SDL_LIB" | grep SONAME | sed -E 's/.*\[([^]]+)\].*/\1/')"
+
+          if [ -z "$SDL_SONAME" ]; then
+            echo "SDL3 shared library SONAME was not found."
+            exit 1
+          fi
+
+          install -m 755 \
+            "$SDL_LIB" \
+            "$PACKAGE_DIR/$SDL_SONAME"
+
+          cat > "$PACKAGE_DIR/run.sh" <<'EOF'
+          #!/usr/bin/env bash
+          set -e
+
+          DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+          export LD_LIBRARY_PATH="$DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+          cd "$DIR"
+
+          exec "$DIR/IndustrialFrontier" "$@"
+          EOF
+
+          chmod +x "$PACKAGE_DIR/run.sh"
+
+          cat > "$PACKAGE_DIR/README.txt" <<'EOF'
+          INDUSTRIAL FRONTIER
+          Showcase v5 - Linux x64
+
+          Developed by CyberTrace Studios
+
+          REQUIREMENTS
+          - 64-bit Linux (x86-64)
+          - OpenGL 3.3 compatible graphics driver
+          - Linux desktop with X11 or Wayland
+          - Compatible system runtime libraries
+
+          HOW TO PLAY
+
+          1. Extract the archive.
+          2. Open a terminal in the extracted folder.
+          3. Run:
+
+             ./run.sh
+
+          CONTROLS
+
+          WASD         Move
+          Mouse        Look
+          Left Click   Dig terrain
+          Shift        Sprint
+          Space        Jump
+          Escape       Pause / Resume
+
+          DEVELOPMENT STATUS
+
+          This is an early development showcase.
+          Some systems remain experimental.
+
+          Source code:
+          https://github.com/DeFragedGaming/Industrial-Frontier
+          EOF
+
+          tar -czf \
+            "releases/$PACKAGE_NAME.tar.gz" \
+            -C releases \
+            "$PACKAGE_NAME"
+
+          echo "Linux package created:"
+          ls -lh "releases/$PACKAGE_NAME.tar.gz"
+
+      - name: Verify Linux dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PACKAGE_DIR="releases/IndustrialFrontier-v5-Linux-x64"
+
+          LD_LIBRARY_PATH="$PACKAGE_DIR" \
+            ldd "$PACKAGE_DIR/IndustrialFrontier" \
+            | tee dependency-report.txt
+
+          if grep -q "not found" dependency-report.txt; then
+            echo "Missing shared libraries detected."
+            exit 1
+          fi
+
+          echo "Required shared libraries resolved."
+
+      - name: Upload Linux Release
+        uses: actions/upload-artifact@v4
+        with:
+          name: IndustrialFrontier-v5-Linux-x64
+          path: releases/IndustrialFrontier-v5-Linux-x64.tar.gz
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
