@@ -29,6 +29,7 @@ jobs:
             cmake \
             ninja-build \
             pkg-config \
+            binutils \
             libgl1-mesa-dev \
             libegl1-mesa-dev \
             libx11-dev \
@@ -38,6 +39,7 @@ jobs:
             libxfixes-dev \
             libxi-dev \
             libxss-dev \
+            libxtst-dev \
             libxkbcommon-dev \
             libwayland-dev \
             libdrm-dev \
