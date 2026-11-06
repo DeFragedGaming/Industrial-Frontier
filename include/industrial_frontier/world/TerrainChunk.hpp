@@ -13,6 +13,8 @@ namespace industrial_frontier
         float color[3];
     };
 
+    struct VoxelMesh;
+
     class TerrainChunk
     {
     public:
@@ -26,6 +28,7 @@ namespace industrial_frontier
         );
 
         bool Generate(const TerrainGenerator& generator);
+        bool SetVoxelMesh(VoxelMesh&& mesh);
 
         int GetChunkX() const;
         int GetChunkZ() const;

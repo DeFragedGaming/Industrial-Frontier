@@ -1,8 +1,10 @@
 #include "industrial_frontier/world/TerrainChunk.hpp"
+#include "industrial_frontier/world/VoxelMesher.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <utility>
 
 namespace industrial_frontier
 {
@@ -137,6 +139,21 @@ namespace industrial_frontier
             }
         }
 
+        m_generated = true;
+        return true;
+    }
+
+    bool TerrainChunk::SetVoxelMesh(VoxelMesh&& mesh)
+    {
+        Clear();
+
+        if (mesh.vertices.empty() || mesh.indices.empty())
+        {
+            return false;
+        }
+
+        m_vertices = std::move(mesh.vertices);
+        m_indices = std::move(mesh.indices);
         m_generated = true;
         return true;
     }

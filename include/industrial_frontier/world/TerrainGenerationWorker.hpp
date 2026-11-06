@@ -10,6 +10,8 @@
 #include <thread>
 #include <unordered_set>
 #include <deque>
+#include <memory>
+#include "industrial_frontier/world/VoxelTerrain.hpp"
 
 namespace industrial_frontier
 {
@@ -33,6 +35,10 @@ namespace industrial_frontier
         void SetCenter(int chunkX, int chunkZ);
 
         void RequestChunk(int chunkX, int chunkZ);
+        void RegenerateChunk(int chunkX, int chunkZ);
+        bool DigSphere(float x, float y, float z, float radius);
+        float SampleDensity(float x, float y, float z) const;
+        std::shared_ptr<const VoxelTerrain> GetVoxelTerrain() const;
 
         bool TryGetCompletedChunk(TerrainChunk& chunk);
 
@@ -45,6 +51,7 @@ namespace industrial_frontier
             int z = 0;
             int distanceSquared = 0;
             std::uint64_t key = 0;
+            std::uint64_t revision = 0;
         };
 
         struct RequestCompare
@@ -70,6 +77,8 @@ namespace industrial_frontier
         std::thread m_thread;
 
         TerrainSettings m_settings{};
+        std::shared_ptr<VoxelTerrain> m_voxelTerrain;
+        void QueueChunk(int chunkX, int chunkZ, bool force);
 
         float m_chunkSize = 32.0f;
         float m_vertexSpacing = 1.0f;

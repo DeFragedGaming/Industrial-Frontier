@@ -1,4 +1,6 @@
 #include "industrial_frontier/world/TerrainGenerationWorker.hpp"
+#include "industrial_frontier/world/VoxelTerrain.hpp"
+#include "industrial_frontier/world/VoxelMesher.hpp"
 
 #include <algorithm>
 #include <utility>
@@ -41,6 +43,7 @@ namespace industrial_frontier
 
             m_centerX = 0;
             m_centerZ = 0;
+            m_voxelTerrain = std::make_shared<VoxelTerrain>(m_settings, m_chunkSize, m_vertexSpacing);
         }
 
         m_thread = std::thread(
@@ -78,6 +81,7 @@ namespace industrial_frontier
             m_requests = {};
             m_completed.clear();
             m_requested.clear();
+            m_voxelTerrain.reset();
         }
     }
 
@@ -95,33 +99,76 @@ namespace industrial_frontier
 
     void TerrainGenerationWorker::RequestChunk(int chunkX, int chunkZ)
     {
+        QueueChunk(chunkX, chunkZ, false);
+    }
+
+    void TerrainGenerationWorker::RegenerateChunk(int chunkX, int chunkZ)
+    {
+        QueueChunk(chunkX, chunkZ, true);
+    }
+
+    void TerrainGenerationWorker::QueueChunk(int chunkX, int chunkZ, bool force)
+    {
         {
             std::lock_guard<std::mutex> lock(m_mutex);
-
-            if (!m_running || m_stopping)
-            {
+            if (!m_running || m_stopping || !m_voxelTerrain)
                 return;
-            }
-
             const std::uint64_t key = MakeChunkKey(chunkX, chunkZ);
-
-            if (!m_requested.insert(key).second)
+            if (force)
             {
-                return;
+                m_requested.erase(key);
+                m_completed.erase(
+                    std::remove_if(m_completed.begin(), m_completed.end(),
+                        [chunkX, chunkZ](const TerrainChunk& chunk)
+                        {
+                            return chunk.GetChunkX() == chunkX &&
+                                   chunk.GetChunkZ() == chunkZ;
+                        }),
+                    m_completed.end());
             }
-
+            if (!m_requested.insert(key).second)
+                return;
             const int dx = chunkX - m_centerX;
             const int dz = chunkZ - m_centerZ;
-
-            m_requests.push({
-                chunkX,
-                chunkZ,
-                dx * dx + dz * dz,
-                key
-            });
+            m_requests.push({chunkX, chunkZ, dx * dx + dz * dz,
+                             key, m_voxelTerrain->GetRevision()});
         }
-
         m_condition.notify_one();
+    }
+
+    float TerrainGenerationWorker::SampleDensity(float x, float y, float z) const
+    {
+        std::shared_ptr<VoxelTerrain> terrain;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            terrain = m_voxelTerrain;
+        }
+        return terrain ? terrain->SampleDensity(x, y, z) : -1.0f;
+    }
+
+    std::shared_ptr<const VoxelTerrain>
+    TerrainGenerationWorker::GetVoxelTerrain() const
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        return m_voxelTerrain;
+    }
+
+    bool TerrainGenerationWorker::DigSphere(float x, float y, float z, float radius)
+    {
+        std::shared_ptr<VoxelTerrain> terrain;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            terrain = m_voxelTerrain;
+        }
+        if (!terrain || !terrain->DigSphere(x, y, z, radius))
+            return false;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_requests = {};
+            m_requested.clear();
+            m_completed.clear();
+        }
+        return true;
     }
 
     bool TerrainGenerationWorker::TryGetCompletedChunk(TerrainChunk& chunk)
@@ -151,7 +198,14 @@ namespace industrial_frontier
 
     void TerrainGenerationWorker::WorkerLoop()
     {
-        TerrainGenerator generator(m_settings);
+        std::shared_ptr<VoxelTerrain> terrain;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            terrain = m_voxelTerrain;
+        }
+        VoxelMesherSettings mesherSettings{};
+        mesherSettings.spacing = 2.0f;
+        VoxelMesher mesher(mesherSettings);
 
         while (true)
         {
@@ -176,6 +230,9 @@ namespace industrial_frontier
                 request = m_requests.top();
                 m_requests.pop();
 
+                if (request.revision != terrain->GetRevision())
+                    continue;
+
                 const int dx = request.x - m_centerX;
                 const int dz = request.z - m_centerZ;
 
@@ -194,10 +251,16 @@ namespace industrial_frontier
                 m_vertexSpacing
             );
 
-            const bool generated = chunk.Generate(generator);
+            VoxelMesh mesh;
+            const bool generated =
+                mesher.GenerateChunk(*terrain, request.x, request.z, mesh) &&
+                chunk.SetVoxelMesh(std::move(mesh));
 
             {
                 std::lock_guard<std::mutex> lock(m_mutex);
+
+                if (request.revision != terrain->GetRevision())
+                    continue;
 
                 if (!generated)
                 {

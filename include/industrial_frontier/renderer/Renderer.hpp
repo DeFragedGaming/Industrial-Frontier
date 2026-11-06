@@ -37,6 +37,8 @@ namespace industrial_frontier
             float progress
         );
 
+        bool DigTerrain(float radius = 2.0f, float reach = 8.0f);
+
         void Render(int width, int height);
         void Shutdown();
 

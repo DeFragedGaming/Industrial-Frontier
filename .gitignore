@@ -4,11 +4,13 @@
 /out/
 /cmake-build-*/
 /showcase
+/releases
 
 # Distribution packages
 /dist/
 
 # Visual Studio
+
 .vs/
 *.sln
 *.vcxproj

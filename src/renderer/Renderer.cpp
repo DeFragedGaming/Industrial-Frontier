@@ -862,6 +862,15 @@ namespace industrial_frontier
                     continue;
                 }
 
+                const std::uint64_t key = MakeChunkKey(chunkX, chunkZ);
+                auto oldGPU = gpuChunks.find(key);
+                if (oldGPU != gpuChunks.end())
+                {
+                    DeleteChunk(oldGPU->second);
+                    gpuChunks.erase(oldGPU);
+                }
+                terrainWorld.RemoveChunk(chunkX, chunkZ);
+
                 if (!terrainWorld.AddGeneratedChunk(
                         std::move(chunk)))
                 {
@@ -1041,11 +1050,17 @@ namespace industrial_frontier
         input.sprint = sprint;
         input.jumpPressed = jumpPressed;
 
-        m_impl->player.Update(
-            deltaTime,
-            input,
-            m_impl->terrainWorld.GetGenerator()
-        );
+        const std::shared_ptr<const VoxelTerrain> voxelTerrain =
+            m_impl->terrainWorker.GetVoxelTerrain();
+
+        if (voxelTerrain)
+        {
+            m_impl->player.Update(
+                deltaTime,
+                input,
+                *voxelTerrain
+            );
+        }
 
         m_impl->UpdatePlayerCameraPose();
         m_impl->UpdateActiveCamera();
@@ -1067,6 +1082,55 @@ namespace industrial_frontier
 
         m_impl->UpdatePlayerCameraPose();
         m_impl->UpdateActiveCamera();
+    }
+
+    bool Renderer::DigTerrain(float radius, float reach)
+    {
+        if (!m_impl || !m_impl->initialized || m_impl->cinematicMode ||
+            radius <= 0.0f || reach <= 0.0f)
+            return false;
+
+        const Vec3 origin = m_impl->playerCameraPosition;
+        const Vec3 direction = Normalize(m_impl->playerCameraForward);
+        const float step = 0.20f;
+        float previousDensity = m_impl->terrainWorker.SampleDensity(
+            origin.x, origin.y, origin.z);
+
+        for (float distance = step; distance <= reach; distance += step)
+        {
+            const Vec3 point = Add(origin, {
+                direction.x * distance,
+                direction.y * distance,
+                direction.z * distance
+            });
+            const float density = m_impl->terrainWorker.SampleDensity(
+                point.x, point.y, point.z);
+
+            if (previousDensity <= 0.0f && density > 0.0f)
+            {
+                if (!m_impl->terrainWorker.DigSphere(
+                        point.x, point.y, point.z, radius))
+                    return false;
+
+                const float chunkSize = m_impl->terrainWorld.GetChunkSize();
+                const float extent = radius + 2.0f;
+                const int minX = static_cast<int>(std::floor(
+                    (point.x - extent) / chunkSize));
+                const int maxX = static_cast<int>(std::floor(
+                    (point.x + extent) / chunkSize));
+                const int minZ = static_cast<int>(std::floor(
+                    (point.z - extent) / chunkSize));
+                const int maxZ = static_cast<int>(std::floor(
+                    (point.z + extent) / chunkSize));
+
+                for (int z = minZ; z <= maxZ; ++z)
+                    for (int x = minX; x <= maxX; ++x)
+                        m_impl->terrainWorker.RegenerateChunk(x, z);
+                return true;
+            }
+            previousDensity = density;
+        }
+        return false;
     }
 
     void Renderer::SetCinematicMode(bool enabled)
@@ -1167,6 +1231,8 @@ namespace industrial_frontier
 
         m_impl->SetLighting();
 
+        glDisable(GL_CULL_FACE);
+
         for (const auto& entry : m_impl->gpuChunks)
         {
             const Impl::GPUChunk& chunk =
@@ -1185,6 +1251,7 @@ namespace industrial_frontier
         }
 
         m_impl->BindVertexArray(0);
+        glEnable(GL_CULL_FACE);
     }
 
     void Renderer::Shutdown()

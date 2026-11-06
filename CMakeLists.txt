@@ -49,6 +49,8 @@ add_executable(IndustrialFrontier
     src/world/TerrainChunk.cpp
     src/world/TerrainWorld.cpp
     src/world/TerrainGenerationWorker.cpp
+    src/world/VoxelTerrain.cpp
+    src/world/VoxelMesher.cpp
 )
 
 target_include_directories(IndustrialFrontier

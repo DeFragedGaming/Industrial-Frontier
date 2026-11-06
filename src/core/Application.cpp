@@ -385,6 +385,10 @@ namespace industrial_frontier
                 {
                     SetMouseCapture(true);
                 }
+                else if (m_gameFlow.IsPlaying() && m_mouseCaptured)
+                {
+                    m_renderer.DigTerrain();
+                }
 
                 break;
             }

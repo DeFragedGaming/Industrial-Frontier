@@ -1,7 +1,7 @@
-
 #pragma once
 
 #include "industrial_frontier/world/TerrainGenerator.hpp"
+#include "industrial_frontier/world/VoxelTerrain.hpp"
 
 namespace industrial_frontier
 {
@@ -23,7 +23,7 @@ namespace industrial_frontier
         void Update(
             float deltaTime,
             const PlayerInput& input,
-            const TerrainGenerator& terrain
+            const VoxelTerrain& terrain
         );
 
         void Rotate(float deltaX, float deltaY);
@@ -72,25 +72,34 @@ namespace industrial_frontier
 
         float m_eyeHeight = 1.60f;
         float m_collisionRadius = 0.35f;
-
         float m_maxStepHeight = 0.65f;
         float m_groundOffset = 0.04f;
-
         float m_mouseSensitivity = 0.12f;
 
         bool m_grounded = false;
         bool m_initialized = false;
 
-        float SampleGroundHeight(
+        bool IsCapsuleClear(
             float x,
+            float y,
             float z,
-            const TerrainGenerator& terrain
+            const VoxelTerrain& terrain
         ) const;
 
-        bool CanMoveTo(
-            float x,
-            float z,
-            const TerrainGenerator& terrain
-        ) const;
+        bool TryHorizontalStep(
+            float deltaX,
+            float deltaZ,
+            const VoxelTerrain& terrain
+        );
+
+        bool SnapToGround(
+            float maximumDrop,
+            const VoxelTerrain& terrain
+        );
+
+        void ApplyVerticalMovement(
+            float deltaTime,
+            const VoxelTerrain& terrain
+        );
     };
 }
