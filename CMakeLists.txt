@@ -44,6 +44,10 @@ add_executable(IndustrialFrontier
 
     src/ui/UIRenderer.cpp
     src/ui/MainMenu.cpp
+    src/ui/GameHUD.cpp
+    src/ui/SaveOverlay.cpp
+
+    src/save/SaveManager.cpp
 
     src/world/TerrainGenerator.cpp
     src/world/TerrainChunk.cpp

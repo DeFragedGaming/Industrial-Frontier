@@ -16,6 +16,8 @@
 #include <iostream>
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
+#include <vector>
 #include <utility>
 
 namespace industrial_frontier
@@ -26,8 +28,8 @@ namespace industrial_frontier
         constexpr float DegreesToRadians = Pi / 180.0f;
 
         constexpr int LoadRadius = 5;
-        constexpr int UnloadRadius = 6;
-        constexpr int MaxUploadsPerFrame = 2;
+        constexpr int UnloadRadius = 8;
+        constexpr int MaxUploadsPerFrame = 4;
 
         struct Vec3
         {
@@ -315,8 +317,12 @@ namespace industrial_frontier
         TerrainWorld terrainWorld;
         TerrainGenerationWorker terrainWorker;
         PlayerController player;
+        std::unique_ptr<VoxelTerrain> visibleCollisionSnapshot;
 
         std::unordered_map<std::uint64_t, GPUChunk> gpuChunks;
+        std::unordered_set<std::uint64_t> emptyChunks;
+        std::unordered_set<std::uint64_t> pendingEditKeys;
+        std::unordered_map<std::uint64_t, GPUChunk> pendingEditReady;
 
         Vec3 cameraPosition{};
         Vec3 cameraForward{0.0f, 0.0f, -1.0f};
@@ -324,6 +330,14 @@ namespace industrial_frontier
 
         Vec3 playerCameraPosition{};
         Vec3 playerCameraForward{0.0f, 0.0f, -1.0f};
+        Vec3 lastSafePlayerCameraPosition{};
+        Vec3 lastSafePlayerFeetPosition{};
+        Vec3 checkedFeetPosition{};
+        Vec3 checkedCameraPosition{};
+        std::uint64_t checkedTerrainRevision = 0;
+        bool hasSafePlayerCameraPosition = false;
+        bool hasSafePlayerFeetPosition = false;
+        bool hasCheckedCameraPosition = false;
 
         Vec3 cinematicPosition{};
         Vec3 cinematicTarget{};
@@ -332,9 +346,17 @@ namespace industrial_frontier
 
         int currentChunkX = 0;
         int currentChunkZ = 0;
+        int prefetchDirectionX = 0;
+        int prefetchDirectionZ = 0;
+        Vec3 previousStreamingPosition{};
+        bool hasPreviousStreamingPosition = false;
 
         bool cinematicMode = false;
         bool initialized = false;
+        std::uint64_t targetLastUpdate = 0;
+        bool cachedTargetHit = false;
+        TerrainMaterial cachedTargetMaterial = TerrainMaterial::None;
+        float cachedTargetDistance = 0.0f;
 
         bool LoadFunctions()
         {
@@ -427,7 +449,7 @@ namespace industrial_frontier
             chunk.indexCount = 0;
         }
 
-        bool UploadChunk(const TerrainChunk& chunk)
+        bool BuildGPUChunk(const TerrainChunk& chunk, GPUChunk& gpuChunk)
         {
             const auto& vertices = chunk.GetVertices();
             const auto& indices = chunk.GetIndices();
@@ -437,7 +459,7 @@ namespace industrial_frontier
                 return false;
             }
 
-            GPUChunk gpuChunk{};
+            gpuChunk = {};
 
             GenVertexArrays(1, &gpuChunk.vertexArray);
             GenBuffers(1, &gpuChunk.vertexBuffer);
@@ -528,20 +550,84 @@ namespace industrial_frontier
             gpuChunk.indexCount =
                 static_cast<GLsizei>(indices.size());
 
-            const auto result = gpuChunks.emplace(
-                MakeChunkKey(
-                    chunk.GetChunkX(),
-                    chunk.GetChunkZ()
-                ),
-                gpuChunk
-            );
+            return true;
+        }
 
-            if (!result.second)
+        bool InstallChunk(const TerrainChunk& chunk)
+        {
+            const std::uint64_t key = MakeChunkKey(
+                chunk.GetChunkX(), chunk.GetChunkZ());
+
+            GPUChunk replacement{};
+            const bool hasGeometry = !chunk.GetIndices().empty();
+            if (hasGeometry && !BuildGPUChunk(chunk, replacement))
             {
-                DeleteChunk(gpuChunk);
                 return false;
             }
 
+            auto existing = gpuChunks.find(key);
+            if (existing != gpuChunks.end())
+            {
+                DeleteChunk(existing->second);
+                gpuChunks.erase(existing);
+            }
+
+            if (hasGeometry)
+            {
+                gpuChunks.emplace(key, replacement);
+                emptyChunks.erase(key);
+            }
+            else
+            {
+                emptyChunks.insert(key);
+            }
+
+            return true;
+        }
+
+        bool CommitEditedChunks()
+        {
+            if (pendingEditKeys.empty())
+            {
+                if (visibleCollisionSnapshot)
+                {
+                    visibleCollisionSnapshot.reset();
+                    hasCheckedCameraPosition = false;
+                }
+                return false;
+            }
+
+            if (pendingEditReady.size() != pendingEditKeys.size())
+            {
+                return false;
+            }
+
+            for (const std::uint64_t key : pendingEditKeys)
+            {
+                auto existing = gpuChunks.find(key);
+                if (existing != gpuChunks.end())
+                {
+                    DeleteChunk(existing->second);
+                    gpuChunks.erase(existing);
+                }
+
+                auto prepared = pendingEditReady.find(key);
+                if (prepared != pendingEditReady.end() &&
+                    prepared->second.indexCount > 0)
+                {
+                    gpuChunks.emplace(key, prepared->second);
+                    emptyChunks.erase(key);
+                }
+                else
+                {
+                    emptyChunks.insert(key);
+                }
+            }
+
+            pendingEditKeys.clear();
+            pendingEditReady.clear();
+            visibleCollisionSnapshot.reset();
+            hasCheckedCameraPosition = false;
             return true;
         }
 
@@ -553,6 +639,18 @@ namespace industrial_frontier
             }
 
             gpuChunks.clear();
+            for (auto& entry : pendingEditReady)
+            {
+                DeleteChunk(entry.second);
+            }
+            emptyChunks.clear();
+            pendingEditKeys.clear();
+            pendingEditReady.clear();
+            visibleCollisionSnapshot.reset();
+            hasCheckedCameraPosition = false;
+            hasPreviousStreamingPosition = false;
+            prefetchDirectionX = 0;
+            prefetchDirectionZ = 0;
         }
 
         void UpdatePlayerCameraPose()
@@ -561,32 +659,121 @@ namespace industrial_frontier
             float forwardY = 0.0f;
             float forwardZ = 0.0f;
 
-            player.GetForward(
-                forwardX,
-                forwardY,
-                forwardZ
-            );
-
+            player.GetForward(forwardX, forwardY, forwardZ);
             playerCameraForward = Normalize({
                 forwardX,
                 forwardY,
                 forwardZ
             });
 
-            player.GetFirstPersonCameraPosition(
-                playerCameraPosition.x,
-                playerCameraPosition.y,
-                playerCameraPosition.z
-            );
+            const Vec3 feet{
+                player.GetX(),
+                player.GetY(),
+                player.GetZ()
+            };
+
+            const auto voxelTerrain = terrainWorker.GetVoxelTerrain();
+            const VoxelTerrain* visibleTerrain = visibleCollisionSnapshot
+                ? visibleCollisionSnapshot.get() : voxelTerrain.get();
+
+            if (visibleTerrain)
+            {
+                const std::uint64_t revision = visibleTerrain->GetRevision();
+                const Vec3 offset = Subtract(feet, checkedFeetPosition);
+                const bool mustCheck = !hasCheckedCameraPosition ||
+                    Dot(offset, offset) > 0.00000001f ||
+                    revision != checkedTerrainRevision;
+
+                if (!mustCheck)
+                {
+                    playerCameraPosition = checkedCameraPosition;
+                }
+                else
+                {
+                    Vec3 safe{};
+                    bool valid = player.GetCollisionSafeCameraPosition(
+                        *visibleTerrain, safe.x, safe.y, safe.z);
+
+                    if (!valid && hasSafePlayerFeetPosition)
+                    {
+                        const Vec3 previousFeet = lastSafePlayerFeetPosition;
+                        player.SetPosition(
+                            previousFeet.x,
+                            previousFeet.y,
+                            previousFeet.z);
+
+                        valid = player.GetCollisionSafeCameraPosition(
+                            *visibleTerrain, safe.x, safe.y, safe.z);
+                    }
+
+                    if (!valid)
+                    {
+                        const float baseX = player.GetX();
+                        const float baseZ = player.GetZ();
+                        const float surfaceY =
+                            visibleTerrain->GetGenerator().GetHeight(baseX, baseZ);
+                        const float minimumY = std::max(
+                            player.GetY(), surfaceY + 0.2f);
+
+                        for (float rise : {
+                                 0.0f, 0.25f, 0.5f, 1.0f,
+                                 2.0f, 3.5f, 5.0f, 8.0f,
+                                 12.0f, 20.0f, 32.0f})
+                        {
+                            player.SetPosition(
+                                baseX, minimumY + rise, baseZ);
+                            if (player.GetCollisionSafeCameraPosition(
+                                    *visibleTerrain, safe.x, safe.y, safe.z))
+                            {
+                                valid = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (valid)
+                    {
+                        playerCameraPosition = safe;
+                        lastSafePlayerCameraPosition = safe;
+                        hasSafePlayerCameraPosition = true;
+                        lastSafePlayerFeetPosition = {
+                            player.GetX(), player.GetY(), player.GetZ()};
+                        hasSafePlayerFeetPosition = true;
+                        checkedFeetPosition = lastSafePlayerFeetPosition;
+                        checkedCameraPosition = safe;
+                        checkedTerrainRevision = revision;
+                        hasCheckedCameraPosition = true;
+                    }
+                    else
+                    {
+                        hasCheckedCameraPosition = false;
+                        if (hasSafePlayerCameraPosition)
+                        {
+                            playerCameraPosition = lastSafePlayerCameraPosition;
+                        }
+                        else
+                        {
+                            player.GetFirstPersonCameraPosition(
+                                playerCameraPosition.x,
+                                playerCameraPosition.y,
+                                playerCameraPosition.z);
+                        }
+                    }
+                }
+            }
+            else
+            {
+                player.GetFirstPersonCameraPosition(
+                    playerCameraPosition.x,
+                    playerCameraPosition.y,
+                    playerCameraPosition.z);
+            }
 
             if (!cinematicMode)
             {
                 cameraPosition = playerCameraPosition;
                 cameraForward = playerCameraForward;
-                cameraTarget = Add(
-                    cameraPosition,
-                    cameraForward
-                );
+                cameraTarget = Add(cameraPosition, cameraForward);
             }
         }
 
@@ -741,61 +928,92 @@ namespace industrial_frontier
 
         void UpdateStreamingCenter()
         {
-            const float chunkSize =
-                terrainWorld.GetChunkSize();
-
+            const float chunkSize = terrainWorld.GetChunkSize();
             if (chunkSize <= 0.0f)
             {
                 return;
             }
 
-            const Vec3 center =
-                cinematicMode
-                    ? cinematicTarget
-                    : playerCameraPosition;
+            const Vec3 center = cinematicMode
+                ? cinematicTarget
+                : playerCameraPosition;
 
-            currentChunkX = static_cast<int>(
-                std::floor(center.x / chunkSize)
-            );
+            if (hasPreviousStreamingPosition)
+            {
+                const float deltaX = center.x - previousStreamingPosition.x;
+                const float deltaZ = center.z - previousStreamingPosition.z;
+                const float planarDistanceSquared = deltaX * deltaX + deltaZ * deltaZ;
 
-            currentChunkZ = static_cast<int>(
-                std::floor(center.z / chunkSize)
-            );
+                if (planarDistanceSquared > 0.0001f &&
+                    planarDistanceSquared < chunkSize * chunkSize * 4.0f)
+                {
+                    prefetchDirectionX = deltaX > 0.01f ? 1 :
+                        (deltaX < -0.01f ? -1 : 0);
+                    prefetchDirectionZ = deltaZ > 0.01f ? 1 :
+                        (deltaZ < -0.01f ? -1 : 0);
+                }
+                else if (planarDistanceSquared >= chunkSize * chunkSize * 4.0f)
+                {
+                    prefetchDirectionX = 0;
+                    prefetchDirectionZ = 0;
+                }
+            }
 
-            terrainWorker.SetCenter(
-                currentChunkX,
-                currentChunkZ
-            );
+            previousStreamingPosition = center;
+            hasPreviousStreamingPosition = true;
+
+            currentChunkX = static_cast<int>(std::floor(center.x / chunkSize));
+            currentChunkZ = static_cast<int>(std::floor(center.z / chunkSize));
+            terrainWorker.SetCenter(currentChunkX, currentChunkZ);
+        }
+
+        bool IsOutsideUnloadRadius(std::uint64_t key) const
+        {
+            const int chunkX = static_cast<std::int32_t>(key >> 32);
+            const int chunkZ = static_cast<std::int32_t>(key & 0xFFFFFFFFu);
+            return std::abs(chunkX - currentChunkX) > UnloadRadius ||
+                std::abs(chunkZ - currentChunkZ) > UnloadRadius;
         }
 
         void RemoveDistantChunks()
         {
-            for (auto iterator = gpuChunks.begin();
-                 iterator != gpuChunks.end();)
+            for (auto iterator = gpuChunks.begin(); iterator != gpuChunks.end();)
             {
-                const int chunkX =
-                    static_cast<std::int32_t>(
-                        iterator->first >> 32
-                    );
-
-                const int chunkZ =
-                    static_cast<std::int32_t>(
-                        iterator->first & 0xFFFFFFFFu
-                    );
-
-                if (std::abs(chunkX - currentChunkX) >
-                        UnloadRadius ||
-                    std::abs(chunkZ - currentChunkZ) >
-                        UnloadRadius)
+                if (IsOutsideUnloadRadius(iterator->first))
                 {
                     DeleteChunk(iterator->second);
-
-                    terrainWorld.RemoveChunk(
-                        chunkX,
-                        chunkZ
-                    );
-
                     iterator = gpuChunks.erase(iterator);
+                }
+                else
+                {
+                    ++iterator;
+                }
+            }
+
+            for (auto iterator = emptyChunks.begin(); iterator != emptyChunks.end();)
+            {
+                if (IsOutsideUnloadRadius(*iterator))
+                {
+                    iterator = emptyChunks.erase(iterator);
+                }
+                else
+                {
+                    ++iterator;
+                }
+            }
+
+            for (auto iterator = pendingEditKeys.begin();
+                 iterator != pendingEditKeys.end();)
+            {
+                if (IsOutsideUnloadRadius(*iterator))
+                {
+                    auto prepared = pendingEditReady.find(*iterator);
+                    if (prepared != pendingEditReady.end())
+                    {
+                        DeleteChunk(prepared->second);
+                        pendingEditReady.erase(prepared);
+                    }
+                    iterator = pendingEditKeys.erase(iterator);
                 }
                 else
                 {
@@ -804,105 +1022,93 @@ namespace industrial_frontier
             }
         }
 
+        void RequestRegion(int centerX, int centerZ)
+        {
+            for (int z = -LoadRadius; z <= LoadRadius; ++z)
+            {
+                for (int x = -LoadRadius; x <= LoadRadius; ++x)
+                {
+                    const int chunkX = centerX + x;
+                    const int chunkZ = centerZ + z;
+                    const std::uint64_t key = MakeChunkKey(chunkX, chunkZ);
+
+                    if (gpuChunks.find(key) != gpuChunks.end() ||
+                        emptyChunks.find(key) != emptyChunks.end() ||
+                        pendingEditKeys.find(key) != pendingEditKeys.end())
+                    {
+                        continue;
+                    }
+
+                    terrainWorker.RequestChunk(chunkX, chunkZ);
+                }
+            }
+        }
+
         void RequestNearbyChunks()
         {
-            for (int z = -LoadRadius;
-                 z <= LoadRadius;
-                 ++z)
+            RequestRegion(currentChunkX, currentChunkZ);
+
+            if (!cinematicMode &&
+                (prefetchDirectionX != 0 || prefetchDirectionZ != 0))
             {
-                for (int x = -LoadRadius;
-                     x <= LoadRadius;
-                     ++x)
-                {
-                    const int chunkX = currentChunkX + x;
-                    const int chunkZ = currentChunkZ + z;
-
-                    const std::uint64_t key =
-                        MakeChunkKey(chunkX, chunkZ);
-
-                    if (gpuChunks.find(key) != gpuChunks.end())
-                    {
-                        continue;
-                    }
-
-                    if (terrainWorld.GetChunk(
-                            chunkX,
-                            chunkZ) != nullptr)
-                    {
-                        continue;
-                    }
-
-                    terrainWorker.RequestChunk(
-                        chunkX,
-                        chunkZ
-                    );
-                }
+                constexpr int LookAheadChunks = 2;
+                RequestRegion(
+                    currentChunkX + prefetchDirectionX * LookAheadChunks,
+                    currentChunkZ + prefetchDirectionZ * LookAheadChunks);
             }
         }
 
         void UploadCompletedChunks()
         {
             TerrainChunk chunk;
-            int uploaded = 0;
+            int consumed = 0;
 
-            while (
-                uploaded < MaxUploadsPerFrame &&
-                terrainWorker.TryGetCompletedChunk(chunk)
-            )
+            while (consumed < MaxUploadsPerFrame &&
+                   terrainWorker.TryGetCompletedChunk(chunk))
             {
-                const int chunkX = chunk.GetChunkX();
-                const int chunkZ = chunk.GetChunkZ();
+                ++consumed;
 
-                const int dx = chunkX - currentChunkX;
-                const int dz = chunkZ - currentChunkZ;
+                const std::uint64_t key = MakeChunkKey(
+                    chunk.GetChunkX(), chunk.GetChunkZ());
 
-                if (std::abs(dx) > UnloadRadius ||
-                    std::abs(dz) > UnloadRadius)
+                if (IsOutsideUnloadRadius(key))
                 {
                     continue;
                 }
 
-                const std::uint64_t key = MakeChunkKey(chunkX, chunkZ);
-                auto oldGPU = gpuChunks.find(key);
-                if (oldGPU != gpuChunks.end())
+                if (pendingEditKeys.find(key) != pendingEditKeys.end())
                 {
-                    DeleteChunk(oldGPU->second);
-                    gpuChunks.erase(oldGPU);
-                }
-                terrainWorld.RemoveChunk(chunkX, chunkZ);
-
-                if (!terrainWorld.AddGeneratedChunk(
-                        std::move(chunk)))
-                {
+                    GPUChunk prepared{};
+                    if (chunk.GetIndices().empty() ||
+                        BuildGPUChunk(chunk, prepared))
+                    {
+                        auto oldPrepared = pendingEditReady.find(key);
+                        if (oldPrepared != pendingEditReady.end())
+                        {
+                            DeleteChunk(oldPrepared->second);
+                        }
+                        pendingEditReady.insert_or_assign(key, prepared);
+                    }
+                    else
+                    {
+                        std::cerr << "Failed to prepare edited chunk ("
+                            << chunk.GetChunkX() << ", " << chunk.GetChunkZ()
+                            << "). Retaining the previous mesh.\n";
+                        terrainWorker.RegenerateChunk(
+                            chunk.GetChunkX(), chunk.GetChunkZ());
+                    }
                     continue;
                 }
 
-                const TerrainChunk* storedChunk =
-                    terrainWorld.GetChunk(
-                        chunkX,
-                        chunkZ
-                    );
-
-                if (storedChunk == nullptr ||
-                    !UploadChunk(*storedChunk))
+                if (!InstallChunk(chunk))
                 {
-                    terrainWorld.RemoveChunk(
-                        chunkX,
-                        chunkZ
-                    );
-
-                    std::cerr
-                        << "Failed to upload terrain chunk ("
-                        << chunkX
-                        << ", "
-                        << chunkZ
-                        << ").\n";
-
-                    continue;
+                    std::cerr << "Failed to upload terrain chunk ("
+                        << chunk.GetChunkX() << ", " << chunk.GetChunkZ()
+                        << "). The old mesh was retained.\n";
                 }
-
-                ++uploaded;
             }
+
+            CommitEditedChunks();
         }
 
         void StreamTerrain()
@@ -1052,13 +1258,15 @@ namespace industrial_frontier
 
         const std::shared_ptr<const VoxelTerrain> voxelTerrain =
             m_impl->terrainWorker.GetVoxelTerrain();
+        const VoxelTerrain* collisionTerrain = m_impl->visibleCollisionSnapshot
+            ? m_impl->visibleCollisionSnapshot.get() : voxelTerrain.get();
 
-        if (voxelTerrain)
+        if (collisionTerrain)
         {
             m_impl->player.Update(
                 deltaTime,
                 input,
-                *voxelTerrain
+                *collisionTerrain
             );
         }
 
@@ -1108,9 +1316,34 @@ namespace industrial_frontier
 
             if (previousDensity <= 0.0f && density > 0.0f)
             {
+                if (!m_impl->visibleCollisionSnapshot)
+                {
+                    const auto currentTerrain =
+                        m_impl->terrainWorker.GetVoxelTerrain();
+                    if (!currentTerrain)
+                    {
+                        return false;
+                    }
+                    m_impl->visibleCollisionSnapshot =
+                        std::make_unique<VoxelTerrain>(
+                            m_impl->terrainWorld.GetSettings(),
+                            m_impl->terrainWorld.GetChunkSize(),
+                            m_impl->terrainWorld.GetVertexSpacing());
+                    m_impl->visibleCollisionSnapshot->SetEdits(
+                        currentTerrain->GetEdits());
+                    m_impl->hasCheckedCameraPosition = false;
+                }
+
                 if (!m_impl->terrainWorker.DigSphere(
                         point.x, point.y, point.z, radius))
+                {
+                    if (m_impl->pendingEditKeys.empty())
+                    {
+                        m_impl->visibleCollisionSnapshot.reset();
+                        m_impl->hasCheckedCameraPosition = false;
+                    }
                     return false;
+                }
 
                 const float chunkSize = m_impl->terrainWorld.GetChunkSize();
                 const float extent = radius + 2.0f;
@@ -1124,13 +1357,187 @@ namespace industrial_frontier
                     (point.z + extent) / chunkSize));
 
                 for (int z = minZ; z <= maxZ; ++z)
+                {
                     for (int x = minX; x <= maxX; ++x)
+                    {
+                        if (std::abs(x - m_impl->currentChunkX) > UnloadRadius ||
+                            std::abs(z - m_impl->currentChunkZ) > UnloadRadius)
+                        {
+                            continue;
+                        }
+                        const std::uint64_t key = m_impl->MakeChunkKey(x, z);
+                        m_impl->pendingEditKeys.insert(key);
+                        auto prepared = m_impl->pendingEditReady.find(key);
+                        if (prepared != m_impl->pendingEditReady.end())
+                        {
+                            m_impl->DeleteChunk(prepared->second);
+                            m_impl->pendingEditReady.erase(prepared);
+                        }
                         m_impl->terrainWorker.RegenerateChunk(x, z);
+                    }
+                }
+                if (m_impl->pendingEditKeys.empty())
+                {
+                    m_impl->visibleCollisionSnapshot.reset();
+                    m_impl->hasCheckedCameraPosition = false;
+                }
                 return true;
             }
             previousDensity = density;
         }
         return false;
+    }
+
+    bool Renderer::GetHUDWorldState(HUDWorldState& state) const
+    {
+        if (!m_impl || !m_impl->initialized)
+        {
+            return false;
+        }
+
+        state.x = m_impl->player.GetX();
+        state.y = m_impl->player.GetY();
+        state.z = m_impl->player.GetZ();
+        state.grounded = m_impl->player.IsGrounded();
+        state.terrainUpdating = !m_impl->pendingEditKeys.empty();
+        state.loadedChunks = m_impl->gpuChunks.size();
+
+        const std::uint64_t now = SDL_GetTicks();
+        if (m_impl->targetLastUpdate == 0 ||
+            now - m_impl->targetLastUpdate >= 90)
+        {
+            m_impl->targetLastUpdate = now == 0 ? 1 : now;
+            m_impl->cachedTargetHit = false;
+            m_impl->cachedTargetMaterial = TerrainMaterial::None;
+            m_impl->cachedTargetDistance = 0.0f;
+            const auto current = m_impl->terrainWorker.GetVoxelTerrain();
+            const VoxelTerrain* terrain = m_impl->visibleCollisionSnapshot
+                ? m_impl->visibleCollisionSnapshot.get() : current.get();
+            if (terrain && !m_impl->cinematicMode)
+            {
+                const Vec3 origin = m_impl->playerCameraPosition;
+                const Vec3 direction = Normalize(m_impl->playerCameraForward);
+                float previousDensity = terrain->SampleDensity(
+                    origin.x, origin.y, origin.z);
+                constexpr float reach = 8.0f;
+                constexpr float step = 0.30f;
+                for (float distance = step; distance <= reach; distance += step)
+                {
+                    const Vec3 point = Add(origin, Multiply(direction, distance));
+                    const float density = terrain->SampleDensity(
+                        point.x, point.y, point.z);
+                    if (previousDensity <= 0.0f && density > 0.0f)
+                    {
+                        float nearDistance = distance - step;
+                        float farDistance = distance;
+                        for (int i = 0; i < 5; ++i)
+                        {
+                            const float midpoint = 0.5f * (nearDistance + farDistance);
+                            const Vec3 mid = Add(origin, Multiply(direction, midpoint));
+                            if (terrain->SampleDensity(mid.x, mid.y, mid.z) > 0.0f)
+                            {
+                                farDistance = midpoint;
+                            }
+                            else
+                            {
+                                nearDistance = midpoint;
+                            }
+                        }
+                        const Vec3 hit = Add(origin, Multiply(direction, farDistance));
+                        constexpr float e = 0.22f;
+                        const float dx = terrain->SampleDensity(
+                            hit.x - e, hit.y, hit.z) -
+                            terrain->SampleDensity(hit.x + e, hit.y, hit.z);
+                        const float dy = terrain->SampleDensity(
+                            hit.x, hit.y - e, hit.z) -
+                            terrain->SampleDensity(hit.x, hit.y + e, hit.z);
+                        const float dz = terrain->SampleDensity(
+                            hit.x, hit.y, hit.z - e) -
+                            terrain->SampleDensity(hit.x, hit.y, hit.z + e);
+                        const Vec3 normal = Normalize({dx, dy, dz});
+                        m_impl->cachedTargetHit = true;
+                        m_impl->cachedTargetDistance = farDistance;
+                        m_impl->cachedTargetMaterial = terrain->GetMaterialAt(
+                            hit.x, hit.y, hit.z, normal.y);
+                        break;
+                    }
+                    previousDensity = density;
+                }
+            }
+        }
+
+        state.hasTarget = m_impl->cachedTargetHit;
+        state.targetDistance = m_impl->cachedTargetDistance;
+        switch (m_impl->cachedTargetMaterial)
+        {
+            case TerrainMaterial::Grass: state.targetMaterial = "GRASS"; break;
+            case TerrainMaterial::DirtClay: state.targetMaterial = "DIRT / CLAY"; break;
+            case TerrainMaterial::Stone: state.targetMaterial = "STONE"; break;
+            case TerrainMaterial::Snow: state.targetMaterial = "SNOW"; break;
+            default: state.targetMaterial = "NONE"; break;
+        }
+        return true;
+    }
+
+    bool Renderer::CaptureWorld(WorldSave& save) const
+    {
+        if (!m_impl || !m_impl->initialized)
+            return false;
+        const auto voxel = m_impl->terrainWorker.GetVoxelTerrain();
+        if (!voxel)
+            return false;
+        save.seed = m_impl->terrainWorld.GetSettings().seed;
+        save.x = m_impl->player.GetX();
+        save.y = m_impl->player.GetY();
+        save.z = m_impl->player.GetZ();
+        save.yaw = m_impl->player.GetYaw();
+        save.pitch = m_impl->player.GetPitch();
+        save.edits = voxel->GetEdits();
+        return true;
+    }
+
+    bool Renderer::StartFreshWorld()
+    {
+        if (!m_impl || !m_impl->initialized)
+            return false;
+        m_impl->terrainWorker.Stop();
+        m_impl->ClearGPUChunks();
+        m_impl->hasSafePlayerCameraPosition = false;
+        m_impl->hasSafePlayerFeetPosition = false;
+        m_impl->hasCheckedCameraPosition = false;
+        m_impl->targetLastUpdate = 0;
+        m_impl->terrainWorld.Clear();
+        m_impl->player.Initialize(m_impl->terrainWorld.GetGenerator());
+        m_impl->UpdatePlayerCameraPose();
+        return m_impl->StartTerrainGeneration();
+    }
+
+    bool Renderer::RestoreWorld(const WorldSave& save)
+    {
+        if (!m_impl || !m_impl->initialized ||
+            save.seed != m_impl->terrainWorld.GetSettings().seed)
+            return false;
+        m_impl->terrainWorker.Stop();
+        m_impl->ClearGPUChunks();
+        m_impl->hasSafePlayerCameraPosition = false;
+        m_impl->hasSafePlayerFeetPosition = false;
+        m_impl->hasCheckedCameraPosition = false;
+        m_impl->targetLastUpdate = 0;
+        m_impl->terrainWorld.Clear();
+        m_impl->terrainWorker.Start(m_impl->terrainWorld.GetSettings(),
+            m_impl->terrainWorld.GetChunkSize(),
+            m_impl->terrainWorld.GetVertexSpacing());
+        if (!m_impl->terrainWorker.IsRunning() ||
+            !m_impl->terrainWorker.ReplaceEdits(save.edits))
+            return false;
+        m_impl->player.Initialize(m_impl->terrainWorld.GetGenerator());
+        m_impl->player.SetPosition(save.x, save.y, save.z);
+        m_impl->player.SetViewRotation(save.yaw, save.pitch);
+        m_impl->UpdatePlayerCameraPose();
+        m_impl->UpdateActiveCamera();
+        m_impl->UpdateStreamingCenter();
+        m_impl->RequestNearbyChunks();
+        return true;
     }
 
     void Renderer::SetCinematicMode(bool enabled)
@@ -1199,7 +1606,7 @@ namespace industrial_frontier
             70.0f * DegreesToRadians,
             static_cast<float>(width) /
                 static_cast<float>(height),
-            0.1f,
+            m_impl->cinematicMode ? 0.10f : 0.075f,
             2000.0f
         );
 

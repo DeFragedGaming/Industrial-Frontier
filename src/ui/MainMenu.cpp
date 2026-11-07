@@ -156,20 +156,20 @@ namespace industrial_frontier
         const Rect panel = GetPanel(width, height);
 
         const float buttonHeight = std::clamp(
-            panel.height * 0.09f,
-            32.0f,
-            52.0f
+            panel.height * 0.078f,
+            30.0f,
+            46.0f
         );
 
         const float spacing = std::clamp(
-            panel.height * 0.019f,
+            panel.height * 0.013f,
             5.0f,
-            12.0f
+            9.0f
         );
 
         return {
             panel.x + 30.0f,
-            panel.y + panel.height * 0.37f +
+            panel.y + panel.height * 0.32f +
                 static_cast<float>(index) *
                     (buttonHeight + spacing),
             panel.width - 60.0f,
@@ -223,7 +223,8 @@ namespace industrial_frontier
         int width,
         int height,
         float mouseX,
-        float mouseY) const
+        float mouseY,
+        bool canContinue) const
     {
         const Rect panel = GetPanel(width, height);
 
@@ -278,12 +279,13 @@ namespace industrial_frontier
         {
             "NEW GAME",
             "CONTINUE",
+            "LOAD GAME",
             "SETTINGS",
             "CREDITS",
             "QUIT GAME"
         };
 
-        for (int i = 0; i < 5; ++i)
+        for (int i = 0; i < 6; ++i)
         {
             const Rect rect = GetButton(width, height, i);
 
@@ -292,7 +294,7 @@ namespace industrial_frontier
                 rect,
                 labels[i],
                 rect.Contains(mouseX, mouseY),
-                i != 1
+                i != 1 || canContinue
             );
         }
 
@@ -341,12 +343,14 @@ namespace industrial_frontier
         const char* labels[] =
         {
             "RESUME",
+            "SAVE GAME",
+            "LOAD GAME",
             "SETTINGS",
             "MAIN MENU",
             "QUIT GAME"
         };
 
-        for (int i = 0; i < 4; ++i)
+        for (int i = 0; i < 6; ++i)
         {
             const Rect rect = GetButton(width, height, i);
 
@@ -571,13 +575,15 @@ namespace industrial_frontier
         int width,
         int height,
         float mouseX,
-        float mouseY) const
+        float mouseY,
+        bool canContinue) const
     {
         switch (flow.GetState())
         {
             case GameState::MainMenu:
                 DrawMainMenu(
-                    ui, width, height, mouseX, mouseY
+                    ui, width, height, mouseX, mouseY,
+                    canContinue
                 );
                 break;
 
@@ -613,13 +619,14 @@ namespace industrial_frontier
         int width,
         int height,
         float mouseX,
-        float mouseY) const
+        float mouseY,
+        bool canContinue) const
     {
         const GameState state = flow.GetState();
 
         if (state == GameState::MainMenu)
         {
-            for (int i = 0; i < 5; ++i)
+            for (int i = 0; i < 6; ++i)
             {
                 if (!GetButton(width, height, i)
                          .Contains(mouseX, mouseY))
@@ -630,17 +637,18 @@ namespace industrial_frontier
                 switch (i)
                 {
                     case 0: return MenuAction::NewGame;
-                    case 1: return MenuAction::None;
-                    case 2: return MenuAction::Settings;
-                    case 3: return MenuAction::Credits;
-                    case 4: return MenuAction::Quit;
+                    case 1: return canContinue ? MenuAction::Continue : MenuAction::None;
+                    case 2: return MenuAction::LoadGame;
+                    case 3: return MenuAction::Settings;
+                    case 4: return MenuAction::Credits;
+                    case 5: return MenuAction::Quit;
                 }
             }
         }
 
         if (state == GameState::Paused)
         {
-            for (int i = 0; i < 4; ++i)
+            for (int i = 0; i < 6; ++i)
             {
                 if (!GetButton(width, height, i)
                          .Contains(mouseX, mouseY))
@@ -651,9 +659,11 @@ namespace industrial_frontier
                 switch (i)
                 {
                     case 0: return MenuAction::Resume;
-                    case 1: return MenuAction::Settings;
-                    case 2: return MenuAction::MainMenu;
-                    case 3: return MenuAction::Quit;
+                    case 1: return MenuAction::SaveGame;
+                    case 2: return MenuAction::LoadGame;
+                    case 3: return MenuAction::Settings;
+                    case 4: return MenuAction::MainMenu;
+                    case 5: return MenuAction::Quit;
                 }
             }
         }

@@ -112,12 +112,28 @@ namespace industrial_frontier
             return Normalize({-dx, -dy, -dz});
         }
 
+        float SmoothRange(float low, float high, float value)
+        {
+            const float t = std::clamp((value - low) / (high - low), 0.0f, 1.0f);
+            return t * t * (3.0f - 2.0f * t);
+        }
+
+        Vec3 MixColor(const Vec3& a, const Vec3& b, float amount)
+        {
+            const float t = std::clamp(amount, 0.0f, 1.0f);
+            return {
+                a.x + (b.x - a.x) * t,
+                a.y + (b.y - a.y) * t,
+                a.z + (b.z - a.z) * t
+            };
+        }
+
         float ColorVariation(const Vec3& position)
         {
             const float variation =
                 0.5f * std::sin(position.x * 0.43f + position.z * 0.28f) +
                 0.5f * std::sin(position.y * 0.57f - position.x * 0.19f);
-            return std::clamp(1.0f + variation * 0.085f, 0.90f, 1.10f);
+            return std::clamp(1.0f + variation * 0.055f, 0.94f, 1.06f);
         }
 
         TerrainVertex CreateVertex(
@@ -135,59 +151,79 @@ namespace industrial_frontier
             vertex.normal[1] = normal.y;
             vertex.normal[2] = normal.z;
 
-            const float surfaceHeight = terrain.GetGenerator().GetHeight(
+            const float surfaceHeight = terrain.GetSurfaceHeight(
+                position.x, position.z
+            );
+            const float originalHeight = terrain.GetGenerator().GetHeight(
                 position.x, position.z
             );
             const float depth = surfaceHeight - position.y;
 
-            float red = 0.43f;
-            float green = 0.41f;
-            float blue = 0.38f;
+            const Vec3 grass = {0.30f, 0.45f, 0.23f};
+            const Vec3 dirtClay = {0.46f, 0.38f, 0.31f};
+            const Vec3 canyonClay = {0.43f, 0.28f, 0.17f};
+            const Vec3 mountainRock = {0.45f, 0.46f, 0.40f};
+            const Vec3 highMountainRock = {0.49f, 0.49f, 0.49f};
+            const Vec3 deepStone = {0.34f, 0.33f, 0.32f};
+            const Vec3 snow = {0.75f, 0.77f, 0.78f};
 
-            if (depth < 0.7f && normal.y > 0.55f)
-            {
-                if (surfaceHeight > 45.0f)
-                {
-                    red = 0.75f;
-                    green = 0.77f;
-                    blue = 0.78f;
-                }
-                else if (surfaceHeight > 25.0f)
-                {
-                    red = 0.45f;
-                    green = 0.46f;
-                    blue = 0.40f;
-                }
-                else if (surfaceHeight < -10.0f)
-                {
-                    red = 0.43f;
-                    green = 0.28f;
-                    blue = 0.17f;
-                }
-                else
-                {
-                    red = 0.30f;
-                    green = 0.45f;
-                    blue = 0.23f;
-                }
-            }
-            else if (depth > 8.0f)
-            {
-                red = 0.34f;
-                green = 0.33f;
-                blue = 0.32f;
-            }
-            else if (depth > 1.0f)
-            {
-                red = 0.46f;
-                green = 0.38f;
-                blue = 0.31f;
-            }
+            const float earthVariation =
+                std::sin(position.x * 0.19f + position.z * 0.23f) * 1.3f +
+                std::sin(position.x * 0.07f - position.z * 0.11f) * 1.9f;
 
+            const float deepRockAmount = SmoothRange(
+                5.0f, 10.0f, depth + earthVariation * 0.75f
+            );
+            const float canyonAmount =
+                1.0f - SmoothRange(-16.0f, -6.0f, originalHeight);
+
+            const Vec3 shallowClay = MixColor(
+                dirtClay, canyonClay, canyonAmount * 0.8f
+            );
+            const Vec3 underground = MixColor(
+                shallowClay, deepStone, deepRockAmount
+            );
+
+            const Vec3 rock = MixColor(
+                mountainRock,
+                highMountainRock,
+                SmoothRange(24.0f, 55.0f, originalHeight)
+            );
+
+            const float grassAmount =
+                SmoothRange(0.40f, 0.76f, normal.y) *
+                (1.0f - SmoothRange(18.0f, 34.0f, originalHeight)) *
+                SmoothRange(-18.0f, -7.0f, originalHeight);
+
+            Vec3 exposedSurface = MixColor(rock, grass, grassAmount);
+            exposedSurface = MixColor(
+                exposedSurface,
+                canyonClay,
+                canyonAmount * (1.0f - SmoothRange(0.26f, 0.68f, normal.y) * 0.35f)
+            );
+
+            const float snowAmount =
+                SmoothRange(37.0f, 53.0f, originalHeight + earthVariation) *
+                SmoothRange(0.18f, 0.66f, normal.y);
+
+            exposedSurface = MixColor(exposedSurface, snow, snowAmount);
+
+            const float rockRim = terrain.GetEntranceRockWeight(
+                position.x, position.z) *
+                (1.0f - SmoothRange(0.32f, 0.72f, normal.y));
+            exposedSurface = MixColor(exposedSurface, rock, rockRim);
+
+            const float surfaceAmount =
+                1.0f - SmoothRange(0.45f, 1.65f, depth);
+
+            Vec3 color = MixColor(underground, exposedSurface, surfaceAmount);
+            color = MixColor(color, rock,
+                rockRim * (1.0f - SmoothRange(6.0f, 12.0f, depth)));
             const float variation = ColorVariation(position);
-            vertex.color[0] = std::clamp(red * variation, 0.0f, 1.0f);
-            vertex.color[1] = std::clamp(green * variation, 0.0f, 1.0f);
-            vertex.color[2] = std::clamp(blue * variation, 0.0f, 1.0f);
+
+            vertex.color[0] = std::clamp(color.x * variation, 0.0f, 1.0f);
+            vertex.color[1] = std::clamp(color.y * variation, 0.0f, 1.0f);
+            vertex.color[2] = std::clamp(color.z * variation, 0.0f, 1.0f);
             return vertex;
         }
 

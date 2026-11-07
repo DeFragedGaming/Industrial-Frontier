@@ -5,10 +5,14 @@
 #include "industrial_frontier/renderer/Renderer.hpp"
 #include "industrial_frontier/ui/MainMenu.hpp"
 #include "industrial_frontier/ui/UIRenderer.hpp"
+#include "industrial_frontier/ui/GameHUD.hpp"
+#include "industrial_frontier/ui/SaveOverlay.hpp"
+#include "industrial_frontier/save/SaveManager.hpp"
 
 #include <SDL3/SDL.h>
 
 #include <string>
+#include <vector>
 
 namespace industrial_frontier
 {
@@ -30,11 +34,22 @@ namespace industrial_frontier
         void HandleMenuAction(MenuAction action);
         void SetMouseCapture(bool captured);
         void UpdateCinematic(float deltaTime);
+        void HandleSaveAction(const SaveUiResult& result);
+        void RefreshSaveSlots();
+        void CancelSavePanel();
+        bool SaveAutomatic();
+        bool LoadWorld(const std::string& id, int backupIndex);
+        bool ContinueWorld();
+        void DisplaySaveError(const std::string& message);
 
         bool m_initialized = false;
         bool m_running = false;
         bool m_mouseCaptured = false;
         bool m_jumpRequested = false;
+        bool m_worldActive = false;
+        bool m_worldPlayed = false;
+        bool m_pausedForPanel = false;
+        float m_autosaveElapsed = 0.0f;
 
         SDL_Window* m_window = nullptr;
         SDL_GLContext m_glContext = nullptr;
@@ -56,7 +71,11 @@ namespace industrial_frontier
 
         Renderer m_renderer;
         UIRenderer m_uiRenderer;
+        GameHUD m_gameHUD;
         MainMenu m_mainMenu;
         GameFlow m_gameFlow;
+        SaveManager m_saveManager;
+        SaveOverlay m_saveOverlay;
+        std::vector<SaveSlotInfo> m_saveSlots;
     };
 }

@@ -9,6 +9,15 @@
 
 namespace industrial_frontier
 {
+    enum class TerrainMaterial
+    {
+        None,
+        Grass,
+        DirtClay,
+        Stone,
+        Snow
+    };
+
     struct VoxelEdit
     {
         float x = 0.0f;
@@ -19,6 +28,16 @@ namespace industrial_frontier
         float strength = 1.0f;
 
         bool addMaterial = false;
+    };
+
+    struct CaveEntrance
+    {
+        float x = 0.0f;
+        float y = 0.0f;
+        float z = 0.0f;
+        float chamberX = 0.0f;
+        float chamberY = 0.0f;
+        float chamberZ = 0.0f;
     };
 
     struct VoxelChunkRange
@@ -46,6 +65,11 @@ namespace industrial_frontier
             float y,
             float z
         ) const;
+
+        float GetSurfaceHeight(float x, float z) const;
+        float GetEntranceRockWeight(float x, float z) const;
+        TerrainMaterial GetMaterialAt(
+            float x, float y, float z, float normalY) const;
 
         bool IsSolid(
             float x,
@@ -77,6 +101,13 @@ namespace industrial_frontier
 
         std::vector<VoxelEdit> GetEdits() const;
 
+        std::vector<CaveEntrance> FindCaveEntrances(
+            float minX,
+            float maxX,
+            float minZ,
+            float maxZ
+        ) const;
+
         void SetEdits(
             const std::vector<VoxelEdit>& edits
         );
@@ -101,6 +132,7 @@ namespace industrial_frontier
         std::vector<VoxelEdit> m_edits;
 
         std::uint64_t m_revision = 0;
+        std::uint64_t m_generationId = 0;
 
         static float Clamp01(float value);
 

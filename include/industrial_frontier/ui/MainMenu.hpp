@@ -10,6 +10,9 @@ namespace industrial_frontier
     {
         None,
         NewGame,
+        Continue,
+        LoadGame,
+        SaveGame,
         Resume,
         MainMenu,
         Settings,
@@ -29,7 +32,8 @@ namespace industrial_frontier
             int width,
             int height,
             float mouseX,
-            float mouseY
+            float mouseY,
+            bool canContinue
         ) const;
 
         MenuAction HandleClick(
@@ -37,7 +41,8 @@ namespace industrial_frontier
             int width,
             int height,
             float mouseX,
-            float mouseY
+            float mouseY,
+            bool canContinue
         ) const;
 
     private:
@@ -67,7 +72,8 @@ namespace industrial_frontier
             int width,
             int height,
             float mouseX,
-            float mouseY
+            float mouseY,
+            bool canContinue
         ) const;
 
         void DrawPauseMenu(

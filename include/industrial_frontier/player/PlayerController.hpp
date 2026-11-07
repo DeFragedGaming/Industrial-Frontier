@@ -29,6 +29,7 @@ namespace industrial_frontier
         void Rotate(float deltaX, float deltaY);
 
         void SetPosition(float x, float y, float z);
+        void SetViewRotation(float yaw, float pitch);
 
         float GetX() const;
         float GetY() const;
@@ -46,6 +47,13 @@ namespace industrial_frontier
         ) const;
 
         void GetFirstPersonCameraPosition(
+            float& x,
+            float& y,
+            float& z
+        ) const;
+
+        bool GetCollisionSafeCameraPosition(
+            const VoxelTerrain& terrain,
             float& x,
             float& y,
             float& z

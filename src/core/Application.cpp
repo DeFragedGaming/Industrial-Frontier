@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <iostream>
+#include <utility>
 
 namespace industrial_frontier
 {
@@ -180,6 +181,23 @@ namespace industrial_frontier
             return false;
         }
 
+        if (!m_saveManager.Initialize())
+        {
+            std::cerr << "Could not initialize save directory.\n";
+            Shutdown();
+            return false;
+        }
+
+        if (!m_saveOverlay.Initialize())
+        {
+            std::cerr << "Save menu initialization failed.\n";
+            Shutdown();
+            return false;
+        }
+
+        RefreshSaveSlots();
+        std::cout << "Save directory: " << m_saveManager.GetDirectory() << '\n';
+
         m_renderer.SetCinematicMode(true);
         m_renderer.UpdateCinematic(0.0f, false, 0.0f);
 
@@ -222,16 +240,224 @@ namespace industrial_frontier
         m_mouseDeltaY = 0.0f;
     }
 
+    void Application::RefreshSaveSlots()
+    {
+        m_saveSlots = m_saveManager.List();
+    }
+
+    void Application::DisplaySaveError(const std::string& message)
+    {
+        m_saveOverlay.SetMessage(message);
+        std::cerr << "Save system: " << message << '\n';
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
+            "Industrial Frontier - Save System", message.c_str(), m_window);
+    }
+
+    bool Application::SaveAutomatic()
+    {
+        if (!m_worldActive || !m_worldPlayed)
+            return false;
+        WorldSave world;
+        if (!m_renderer.CaptureWorld(world))
+            return false;
+        std::string error;
+        if (!m_saveManager.SaveAutosave(world, error))
+        {
+            std::cerr << "Autosave failed: " << error << '\n';
+            return false;
+        }
+        m_autosaveElapsed = 0.0f;
+        RefreshSaveSlots();
+        return true;
+    }
+
+    bool Application::LoadWorld(const std::string& id, int backupIndex)
+    {
+        WorldSave world;
+        bool recovered = false;
+        std::string error;
+        if (!m_saveManager.Load(id, backupIndex, world, recovered, error))
+        {
+            DisplaySaveError(error);
+            return false;
+        }
+        if (!m_renderer.RestoreWorld(world))
+        {
+            DisplaySaveError("Could not restore this world or its terrain seed");
+            return false;
+        }
+        m_saveManager.MarkLastUsed(id);
+        m_gameFlow.StartNewGame();
+        m_gameFlow.SkipIntroduction();
+        m_renderer.SetCinematicMode(false);
+        m_worldActive = true;
+        m_worldPlayed = true;
+        m_autosaveElapsed = 0.0f;
+        m_gameHUD.Reset();
+        SDL_StopTextInput(m_window);
+        m_saveOverlay.Close();
+        m_pausedForPanel = false;
+        SetMouseCapture(true);
+        std::cout << (recovered ? "Restored backup: " : "Loaded save: ")
+                  << world.name << '\n';
+        return true;
+    }
+
+    bool Application::ContinueWorld()
+    {
+        WorldSave world;
+        std::string id;
+        std::string error;
+        bool recovered = false;
+        if (!m_saveManager.Continue(world, id, recovered, error))
+        {
+            DisplaySaveError(error);
+            return false;
+        }
+        return LoadWorld(id, 0);
+    }
+
+    void Application::CancelSavePanel()
+    {
+        SDL_StopTextInput(m_window);
+        m_saveOverlay.Close();
+        if (m_pausedForPanel && m_gameFlow.GetState() == GameState::Paused)
+        {
+            m_gameFlow.ResumeGame();
+            m_renderer.SetCinematicMode(false);
+            SetMouseCapture(true);
+        }
+        m_pausedForPanel = false;
+    }
+
+    void Application::HandleSaveAction(const SaveUiResult& result)
+    {
+        switch (result.action)
+        {
+            case SaveUiAction::None:
+                break;
+            case SaveUiAction::OpenSave:
+            case SaveUiAction::OpenLoad:
+            {
+                if (result.action == SaveUiAction::OpenSave &&
+                    (!m_worldActive || !m_worldPlayed))
+                    break;
+                if (m_gameFlow.IsPlaying())
+                {
+                    m_gameFlow.PauseGame();
+                    SetMouseCapture(false);
+                    m_pausedForPanel = true;
+                }
+                else
+                {
+                    m_pausedForPanel = false;
+                }
+                RefreshSaveSlots();
+                if (result.action == SaveUiAction::OpenSave)
+                {
+                    m_saveOverlay.OpenSave();
+                    SDL_StartTextInput(m_window);
+                }
+                else
+                {
+                    m_saveOverlay.OpenLoad();
+                }
+                break;
+            }
+            case SaveUiAction::Continue:
+                ContinueWorld();
+                break;
+            case SaveUiAction::LoadSlot:
+                LoadWorld(result.slotId, result.backupIndex);
+                break;
+            case SaveUiAction::DeleteSlot:
+            {
+                const auto found = std::find_if(m_saveSlots.begin(), m_saveSlots.end(),
+                    [&result](const SaveSlotInfo& slot)
+                    {
+                        return slot.id == result.slotId;
+                    });
+                if (found == m_saveSlots.end())
+                {
+                    DisplaySaveError("Selected save no longer exists");
+                    RefreshSaveSlots();
+                    break;
+                }
+                const std::string name = found->name;
+                std::string error;
+                if (!m_saveManager.DeleteSlot(result.slotId, error))
+                {
+                    RefreshSaveSlots();
+                    DisplaySaveError(error);
+                    break;
+                }
+                RefreshSaveSlots();
+                m_saveOverlay.SetMessage("DELETED: " + name);
+                std::cout << "Deleted save slot: " << name << '\n';
+                break;
+            }
+            case SaveUiAction::SaveNamed:
+            {
+                if (!m_worldActive || !m_worldPlayed)
+                    break;
+                WorldSave world;
+                if (!m_renderer.CaptureWorld(world))
+                {
+                    DisplaySaveError("Could not capture the current world");
+                    break;
+                }
+                std::string id;
+                std::string error;
+                if (!m_saveManager.SaveNew(result.name, world, id, error))
+                {
+                    DisplaySaveError(error);
+                    break;
+                }
+                RefreshSaveSlots();
+                CancelSavePanel();
+                m_saveOverlay.SetMessage("SAVED: " + result.name);
+                std::cout << "Created named save: " << result.name << '\n';
+                break;
+            }
+            case SaveUiAction::Close:
+                CancelSavePanel();
+                break;
+        }
+    }
+
     void Application::HandleMenuAction(MenuAction action)
     {
         switch (action)
         {
             case MenuAction::NewGame:
+                m_gameHUD.Reset();
+                if (m_worldActive && m_worldPlayed)
+                    SaveAutomatic();
+                if (!m_renderer.StartFreshWorld())
+                {
+                    DisplaySaveError("Could not initialize a new world");
+                    break;
+                }
+                m_worldActive = true;
+                m_worldPlayed = false;
+                m_autosaveElapsed = 0.0f;
                 SetMouseCapture(false);
                 m_gameFlow.StartNewGame();
                 m_menuCameraTime = 0.0f;
                 m_planetfallProgress = 0.0f;
                 m_renderer.SetCinematicMode(true);
+                break;
+
+            case MenuAction::Continue:
+                ContinueWorld();
+                break;
+
+            case MenuAction::LoadGame:
+                HandleSaveAction({SaveUiAction::OpenLoad});
+                break;
+
+            case MenuAction::SaveGame:
+                HandleSaveAction({SaveUiAction::OpenSave});
                 break;
 
             case MenuAction::Resume:
@@ -241,6 +467,9 @@ namespace industrial_frontier
                 break;
 
             case MenuAction::MainMenu:
+                SaveAutomatic();
+                m_worldActive = false;
+                m_worldPlayed = false;
                 SetMouseCapture(false);
                 m_gameFlow.ReturnToMainMenu();
                 m_menuCameraTime = 0.0f;
@@ -286,6 +515,11 @@ namespace industrial_frontier
 
     void Application::HandleEvent(const SDL_Event& event)
     {
+        if (event.type == SDL_EVENT_TEXT_INPUT && m_saveOverlay.IsNaming())
+        {
+            m_saveOverlay.TextInput(event.text.text);
+            return;
+        }
         switch (event.type)
         {
             case SDL_EVENT_QUIT:
@@ -302,6 +536,37 @@ namespace industrial_frontier
 
                 const SDL_Scancode key = event.key.scancode;
                 const GameState state = m_gameFlow.GetState();
+
+                if (m_saveOverlay.IsOpen())
+                {
+                    HandleSaveAction(m_saveOverlay.KeyDown(key));
+                    break;
+                }
+
+                if (key == SDL_SCANCODE_F3 && state == GameState::Playing)
+                {
+                    m_gameHUD.ToggleDetails();
+                    break;
+                }
+
+                if (key == SDL_SCANCODE_F5 &&
+                    (state == GameState::Playing || state == GameState::Paused))
+                {
+                    HandleSaveAction({SaveUiAction::OpenSave});
+                    break;
+                }
+                if (key == SDL_SCANCODE_F9 &&
+                    (state == GameState::Playing || state == GameState::Paused ||
+                     state == GameState::MainMenu))
+                {
+                    HandleSaveAction({SaveUiAction::OpenLoad});
+                    break;
+                }
+                if (key == SDL_SCANCODE_F10 && state == GameState::MainMenu)
+                {
+                    HandleSaveAction({SaveUiAction::Continue});
+                    break;
+                }
 
                 if (key == SDL_SCANCODE_ESCAPE)
                 {
@@ -346,6 +611,32 @@ namespace industrial_frontier
                     break;
                 }
 
+                if (m_saveOverlay.IsOpen() ||
+                    m_gameFlow.GetState() == GameState::MainMenu ||
+                    m_gameFlow.GetState() == GameState::Paused)
+                {
+                    int ww = 1;
+                    int wh = 1;
+                    SDL_GetWindowSize(m_window, &ww, &wh);
+                    const float scaleX = static_cast<float>(m_viewportWidth) /
+                        static_cast<float>(std::max(ww, 1));
+                    const float scaleY = static_cast<float>(m_viewportHeight) /
+                        static_cast<float>(std::max(wh, 1));
+                    const bool modalWasOpen = m_saveOverlay.IsOpen();
+                    const auto ui = m_saveOverlay.Click(m_viewportWidth,
+                        m_viewportHeight, event.button.x * scaleX,
+                        event.button.y * scaleY,
+                        true, m_worldActive && m_worldPlayed,
+                        !m_saveSlots.empty(), m_saveSlots);
+                    if (ui.action != SaveUiAction::None)
+                    {
+                        HandleSaveAction(ui);
+                        break;
+                    }
+                    if (modalWasOpen)
+                        break;
+                }
+
                 if (m_gameFlow.IsMenuVisible())
                 {
                     int windowWidth = 1;
@@ -375,7 +666,8 @@ namespace industrial_frontier
                             m_viewportWidth,
                             m_viewportHeight,
                             event.button.x * scaleX,
-                            event.button.y * scaleY
+                            event.button.y * scaleY,
+                            !m_saveSlots.empty()
                         );
 
                     HandleMenuAction(action);
@@ -387,7 +679,7 @@ namespace industrial_frontier
                 }
                 else if (m_gameFlow.IsPlaying() && m_mouseCaptured)
                 {
-                    m_renderer.DigTerrain();
+                    m_gameHUD.ReportDig(m_renderer.DigTerrain());
                 }
 
                 break;
@@ -510,6 +802,11 @@ namespace industrial_frontier
 
             if (m_gameFlow.IsPlaying())
             {
+                m_gameHUD.Update(deltaTime);
+                m_worldPlayed = true;
+                m_autosaveElapsed += deltaTime;
+                if (m_autosaveElapsed >= 1800.0f)
+                    SaveAutomatic();
                 const bool* keyboardState =
                     SDL_GetKeyboardState(nullptr);
 
@@ -596,24 +893,43 @@ namespace industrial_frontier
                 m_viewportHeight
             );
 
-            if (!m_gameFlow.IsPlaying())
-            {
-                m_uiRenderer.BeginFrame(
-                    m_viewportWidth,
-                    m_viewportHeight
-                );
+            m_uiRenderer.BeginFrame(
+                m_viewportWidth,
+                m_viewportHeight
+            );
 
+            if (m_gameFlow.IsPlaying())
+            {
+                HUDWorldState hudWorld{};
+                if (m_renderer.GetHUDWorldState(hudWorld))
+                {
+                    m_gameHUD.Render(
+                        m_uiRenderer,
+                        hudWorld,
+                        m_viewportWidth,
+                        m_viewportHeight
+                    );
+                }
+            }
+            else
+            {
                 m_mainMenu.Render(
                     m_uiRenderer,
                     m_gameFlow,
                     m_viewportWidth,
                     m_viewportHeight,
                     m_mouseX,
-                    m_mouseY
+                    m_mouseY,
+                    !m_saveSlots.empty()
                 );
-
-                m_uiRenderer.EndFrame();
             }
+
+            m_uiRenderer.EndFrame();
+
+            m_saveOverlay.Render(m_viewportWidth, m_viewportHeight,
+                m_gameFlow.GetState() == GameState::MainMenu ||
+                m_gameFlow.GetState() == GameState::Paused,
+                m_worldActive && m_worldPlayed, !m_saveSlots.empty(), m_saveSlots);
 
             SDL_GL_SwapWindow(m_window);
         }
@@ -621,6 +937,10 @@ namespace industrial_frontier
 
     void Application::Shutdown()
     {
+        if (m_initialized && m_worldActive && m_worldPlayed)
+            SaveAutomatic();
+        if (m_window != nullptr)
+            SDL_StopTextInput(m_window);
         if (m_window != nullptr && m_mouseCaptured)
         {
             SDL_SetWindowRelativeMouseMode(
@@ -633,6 +953,7 @@ namespace industrial_frontier
 
         if (m_glContext != nullptr)
         {
+            m_saveOverlay.Shutdown();
             m_uiRenderer.Shutdown();
             m_renderer.Shutdown();
 
