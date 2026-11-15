@@ -56,8 +56,10 @@ namespace industrial_frontier
         }
 
         std::vector<std::string> WrapText(
+            UIRenderer& ui,
             std::string_view text,
-            std::size_t maximumCharacters)
+            float maximumWidth,
+            float scale)
         {
             std::vector<std::string> lines;
             std::string line;
@@ -71,8 +73,7 @@ namespace industrial_frontier
                 }
 
                 if (!line.empty() &&
-                    line.size() + word.size() + 1 >
-                        maximumCharacters)
+                    ui.MeasureText(line + " " + word, scale) > maximumWidth)
                 {
                     lines.push_back(line);
                     line.clear();
@@ -419,18 +420,11 @@ namespace industrial_frontier
             1.7f
         );
 
-        const std::size_t maximumCharacters =
-            static_cast<std::size_t>(
-                std::max(
-                    18.0f,
-                    (panelWidth - 48.0f) /
-                        (bodyScale * 6.0f)
-                )
-            );
-
         const auto lines = WrapText(
+            ui,
             scene.narrative,
-            maximumCharacters
+            panelWidth - 48.0f,
+            bodyScale
         );
 
         float textY =
@@ -446,7 +440,11 @@ namespace industrial_frontier
                 White
             );
 
-            textY += bodyScale * 10.0f;
+            textY += std::max(ui.TextHeight(bodyScale) + 4.0f, bodyScale * 10.0f);
+            if (textY > panelY + panelHeight - 62.0f)
+            {
+                break;
+            }
         }
 
         const float progress =

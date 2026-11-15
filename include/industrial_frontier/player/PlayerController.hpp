@@ -2,6 +2,11 @@
 
 #include "industrial_frontier/world/TerrainGenerator.hpp"
 #include "industrial_frontier/world/VoxelTerrain.hpp"
+#include "industrial_frontier/resources/OutcropInteraction.hpp"
+#include "industrial_frontier/forest/ForestGenerator.hpp"
+#include "industrial_frontier/player/StructureCollision.hpp"
+
+#include <vector>
 
 namespace industrial_frontier
 {
@@ -27,6 +32,9 @@ namespace industrial_frontier
         );
 
         void Rotate(float deltaX, float deltaY);
+        void SetOutcropColliders(const std::vector<OutcropCollisionShape>* shapes);
+        void SetTreeColliders(const std::vector<ForestTree>* trees);
+        void SetStructureColliders(const std::vector<StructureCollider>* colliders);
 
         void SetPosition(float x, float y, float z);
         void SetViewRotation(float yaw, float pitch);
@@ -86,6 +94,15 @@ namespace industrial_frontier
 
         bool m_grounded = false;
         bool m_initialized = false;
+        const std::vector<OutcropCollisionShape>* m_outcropColliders = nullptr;
+        const std::vector<ForestTree>* m_treeColliders = nullptr;
+        const std::vector<StructureCollider>* m_structureColliders = nullptr;
+
+        bool IsCollisionSolid(
+            const VoxelTerrain& terrain, float x, float y, float z) const;
+        bool IsOutcropBlocking(float x, float y, float z) const;
+        bool IsTreeBlocking(float x, float y, float z, float padding) const;
+        bool IsStructureBlocking(float x, float y, float z, float padding) const;
 
         bool IsCapsuleClear(
             float x,

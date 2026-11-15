@@ -6,6 +6,10 @@
 #include <iostream>
 #include <string>
 
+#ifdef DrawText
+#undef DrawText
+#endif
+
 namespace industrial_frontier
 {
     namespace
@@ -69,60 +73,7 @@ namespace industrial_frontier
             return result != nullptr;
         }
 
-        using Glyph = std::array<unsigned char, 7>;
-        Glyph Letter(char c)
-        {
-            switch (c)
-            {
-                case 'A': return {14,17,17,31,17,17,17};
-                case 'B': return {30,17,17,30,17,17,30};
-                case 'C': return {14,17,16,16,16,17,14};
-                case 'D': return {30,17,17,17,17,17,30};
-                case 'E': return {31,16,16,30,16,16,31};
-                case 'F': return {31,16,16,30,16,16,16};
-                case 'G': return {14,17,16,23,17,17,14};
-                case 'H': return {17,17,17,31,17,17,17};
-                case 'I': return {31,4,4,4,4,4,31};
-                case 'J': return {7,2,2,2,18,18,12};
-                case 'K': return {17,18,20,24,20,18,17};
-                case 'L': return {16,16,16,16,16,16,31};
-                case 'M': return {17,27,21,21,17,17,17};
-                case 'N': return {17,25,21,19,17,17,17};
-                case 'O': return {14,17,17,17,17,17,14};
-                case 'P': return {30,17,17,30,16,16,16};
-                case 'Q': return {14,17,17,17,21,18,13};
-                case 'R': return {30,17,17,30,20,18,17};
-                case 'S': return {15,16,16,14,1,1,30};
-                case 'T': return {31,4,4,4,4,4,4};
-                case 'U': return {17,17,17,17,17,17,14};
-                case 'V': return {17,17,17,17,17,10,4};
-                case 'W': return {17,17,17,21,21,21,10};
-                case 'X': return {17,17,10,4,10,17,17};
-                case 'Y': return {17,17,10,4,4,4,4};
-                case 'Z': return {31,1,2,4,8,16,31};
-                case '0': return {14,17,19,21,25,17,14};
-                case '1': return {4,12,4,4,4,4,14};
-                case '2': return {14,17,1,2,4,8,31};
-                case '3': return {30,1,1,14,1,1,30};
-                case '4': return {2,6,10,18,31,2,2};
-                case '5': return {31,16,30,1,1,17,14};
-                case '6': return {6,8,16,30,17,17,14};
-                case '7': return {31,1,2,4,8,8,8};
-                case '8': return {14,17,17,14,17,17,14};
-                case '9': return {14,17,17,15,1,2,12};
-                case '-': return {0,0,0,31,0,0,0};
-                case '_': return {0,0,0,0,0,0,31};
-                case '.': return {0,0,0,0,0,12,12};
-                case ':': return {0,12,12,0,12,12,0};
-                case '/': return {1,2,2,4,8,8,16};
-                case '!': return {4,4,4,4,4,0,4};
-                case '?': return {14,17,1,2,4,0,4};
-                case '[': return {14,8,8,8,8,8,14};
-                case ']': return {14,2,2,2,2,2,14};
-                case '#': return {10,10,31,10,31,10,10};
-                default: return {0,0,0,0,0,0,0};
-            }
-        }
+
     }
 
     bool SaveOverlay::SetupGL()
@@ -221,6 +172,11 @@ namespace industrial_frontier
         return true;
     }
 
+    void SaveOverlay::SetTextRenderer(UIRenderer* renderer)
+    {
+        m_textRenderer = renderer;
+    }
+
     bool SaveOverlay::Initialize()
     {
         return SetupGL();
@@ -297,7 +253,9 @@ namespace industrial_frontier
         if (m_confirmDelete)
         {
             if (key == SDL_SCANCODE_ESCAPE)
+            {
                 DismissDeleteConfirmation();
+            }
             return {};
         }
         if (key == SDL_SCANCODE_ESCAPE)
@@ -332,14 +290,18 @@ namespace industrial_frontier
 
         if (m_confirmDelete)
         {
-            const float boxLeft = left + (panelWidth - 470.0f) * 0.5f;
+            const float boxWidth = std::min(470.0f, panelWidth - 24.0f);
+            const float boxLeft = left + (panelWidth - boxWidth) * 0.5f;
             const float boxTop = top + (panelHeight - 216.0f) * 0.5f;
-            if (Inside(x, y, boxLeft + 238.0f, boxTop + 155.0f, 199.0f, 40.0f))
+            const float buttonWidth = (boxWidth - 63.0f) * 0.5f;
+            if (Inside(x, y, boxLeft + 25.0f + buttonWidth + 13.0f,
+                boxTop + 155.0f, buttonWidth, 40.0f))
             {
                 DismissDeleteConfirmation();
                 return {};
             }
-            if (Inside(x, y, boxLeft + 25.0f, boxTop + 155.0f, 199.0f, 40.0f))
+            if (Inside(x, y, boxLeft + 25.0f, boxTop + 155.0f,
+                buttonWidth, 40.0f))
             {
                 const std::string id = m_deleteSlotId;
                 DismissDeleteConfirmation();
@@ -348,7 +310,8 @@ namespace industrial_frontier
             return {};
         }
 
-        if (Inside(x, y, left + panelWidth - 112.0f, top + 18.0f, 95.0f, 38.0f))
+        if (Inside(x, y, left + panelWidth - 112.0f,
+            top + 18.0f, 95.0f, 38.0f))
             return {SaveUiAction::Close};
 
         if (m_mode == Mode::Save)
@@ -368,15 +331,17 @@ namespace industrial_frontier
         {
             const float rowTop = top + 90.0f + static_cast<float>(i) * 57.0f;
             const auto& slot = slots[start + i];
-            if (Inside(x, y, left + panelWidth - 327.0f, rowTop + 7.0f, 65.0f, 36.0f))
+            if (Inside(x, y, left + panelWidth - 327.0f,
+                rowTop + 7.0f, 65.0f, 36.0f))
                 return {SaveUiAction::LoadSlot, slot.id, {}, 0};
-            if (slot.backupAvailable &&
-                Inside(x, y, left + panelWidth - 254.0f, rowTop + 7.0f, 68.0f, 36.0f))
+            if (slot.backupAvailable && Inside(x, y,
+                left + panelWidth - 254.0f, rowTop + 7.0f, 68.0f, 36.0f))
                 return {SaveUiAction::LoadSlot, slot.id, {}, 1};
-            if (slot.olderBackupAvailable &&
-                Inside(x, y, left + panelWidth - 178.0f, rowTop + 7.0f, 68.0f, 36.0f))
+            if (slot.olderBackupAvailable && Inside(x, y,
+                left + panelWidth - 178.0f, rowTop + 7.0f, 68.0f, 36.0f))
                 return {SaveUiAction::LoadSlot, slot.id, {}, 2};
-            if (Inside(x, y, left + panelWidth - 102.0f, rowTop + 7.0f, 84.0f, 36.0f))
+            if (Inside(x, y, left + panelWidth - 102.0f,
+                rowTop + 7.0f, 84.0f, 36.0f))
             {
                 m_deleteSlotId = slot.id;
                 m_deleteSlotName = slot.name;
@@ -415,123 +380,179 @@ namespace industrial_frontier
                               const std::string& text, int scale,
                               float r, float g, float b, int maxChars)
     {
-        int count = 0;
-        for (unsigned char original : text)
+        (void)width;
+        (void)height;
+        if (text.empty() || maxChars <= 0)
         {
-            if (count >= maxChars) break;
-            const char c = (original >= 'a' && original <= 'z')
-                ? static_cast<char>(original - 'a' + 'A')
-                : static_cast<char>(original);
-            const Glyph rows = Letter(c);
-            for (int row = 0; row < 7; ++row)
-                for (int col = 0; col < 5; ++col)
-                    if ((rows[static_cast<std::size_t>(row)] & (1u << (4-col))) != 0)
-                        AddRect(width, height, x+col*scale, y+row*scale,
-                                static_cast<float>(scale),static_cast<float>(scale),r,g,b,1.0f);
-            x += scale * 6;
-            ++count;
+            return;
         }
+        QueuedText queued;
+        queued.x = x;
+        queued.y = y;
+        queued.scale = static_cast<float>(scale) * 0.55f;
+        queued.color = UIColor{r, g, b, 1.0f};
+        queued.text = text.substr(0, static_cast<std::size_t>(maxChars));
+        m_queuedText.push_back(std::move(queued));
     }
 
-    void SaveOverlay::DrawButton(int width,int height,float x,float y,float w,float h,
-                                 const std::string& text,bool enabled)
+    void SaveOverlay::DrawButton(int width, int height, float x, float y,
+                                 float w, float h, const std::string& text, bool enabled)
     {
-        AddRect(width,height,x,y,w,h,enabled?0.18f:0.12f,
-                enabled?0.28f:0.15f,enabled?0.37f:0.19f,0.96f);
-        AddRect(width,height,x,y,w,2,enabled?0.86f:0.28f,
-                enabled?0.61f:0.30f,enabled?0.28f:0.33f,1.0f);
-        AddText(width,height,x+12,y+(h-14)*0.5f,text,2,
-                enabled?0.96f:0.55f,enabled?0.96f:0.57f,enabled?0.98f:0.60f,
-                static_cast<int>((w-18)/12));
+        AddRect(width, height, x, y, w, h,
+            enabled ? 0.18f : 0.12f,
+            enabled ? 0.28f : 0.15f,
+            enabled ? 0.37f : 0.19f, 0.96f);
+        AddRect(width, height, x, y, w, 2,
+            enabled ? 0.86f : 0.28f,
+            enabled ? 0.61f : 0.30f,
+            enabled ? 0.28f : 0.33f, 1.0f);
+
+        std::string visible = text;
+        const float scale = 1.1f;
+        if (m_textRenderer != nullptr)
+        {
+            while (!visible.empty() &&
+                m_textRenderer->MeasureText(visible, scale) > w - 12.0f)
+            {
+                visible.pop_back();
+            }
+        }
+        const float textWidth = m_textRenderer != nullptr
+            ? m_textRenderer->MeasureText(visible, scale)
+            : static_cast<float>(visible.size()) * 8.0f;
+        const float textHeight = m_textRenderer != nullptr
+            ? m_textRenderer->TextHeight(scale) : 15.0f;
+        AddText(width, height, x + (w - textWidth) * 0.5f,
+            y + (h - textHeight) * 0.5f, visible, 2,
+            enabled ? 0.96f : 0.55f,
+            enabled ? 0.96f : 0.57f,
+            enabled ? 0.98f : 0.60f,
+            static_cast<int>(visible.size()));
     }
 
-    void SaveOverlay::Render(int width,int height,bool menuAvailable,
+    void SaveOverlay::Render(int width, int height, bool menuAvailable,
                              bool, bool,
                              const std::vector<SaveSlotInfo>& slots)
     {
         if (width <= 0 || height <= 0 || !m_program) return;
         m_vertices.clear();
+        m_queuedText.clear();
         if (m_mode == Mode::Closed)
         {
             if (!menuAvailable || m_message.empty()) return;
-            AddRect(width,height,15,static_cast<float>(height)-42,
-                    static_cast<float>(width)-30,28,0.08f,0.10f,0.15f,0.92f);
-            AddText(width,height,28,static_cast<float>(height)-35,
-                    m_message,2,1.0f,0.75f,0.42f,65);
+            AddRect(width, height, 15, static_cast<float>(height) - 42,
+                static_cast<float>(width) - 30, 28,
+                0.08f, 0.10f, 0.15f, 0.92f);
+            AddText(width, height, 28, static_cast<float>(height) - 35,
+                m_message, 2, 1.0f, 0.75f, 0.42f, 65);
         }
         else if (width >= 350 && height >= 320)
         {
-            AddRect(width,height,0,0,static_cast<float>(width),static_cast<float>(height),
-                    0.0f,0.0f,0.0f,0.72f);
-            const float pw = std::min(750.0f, static_cast<float>(width)-24.0f);
-            const float ph = std::min(520.0f, static_cast<float>(height)-24.0f);
-            const float left = (static_cast<float>(width)-pw)*0.5f;
-            const float top = (static_cast<float>(height)-ph)*0.5f;
-            AddRect(width,height,left,top,pw,ph,0.075f,0.09f,0.12f,0.99f);
-            AddRect(width,height,left,top,pw,4,0.85f,0.60f,0.26f,1.0f);
-            AddText(width,height,left+24,top+26,
-                    m_mode==Mode::Save?"CREATE NAMED SAVE":"LOAD SAVED WORLD",
-                    3,0.97f,0.97f,0.97f,26);
-            DrawButton(width,height,left+pw-112,top+18,95,38,"CLOSE",true);
+            AddRect(width, height, 0, 0,
+                static_cast<float>(width), static_cast<float>(height),
+                0.0f, 0.0f, 0.0f, 0.72f);
+            const float pw = std::min(750.0f, static_cast<float>(width) - 24.0f);
+            const float ph = std::min(520.0f, static_cast<float>(height) - 24.0f);
+            const float left = (static_cast<float>(width) - pw) * 0.5f;
+            const float top = (static_cast<float>(height) - ph) * 0.5f;
+            AddRect(width, height, left, top, pw, ph,
+                0.075f, 0.09f, 0.12f, 0.99f);
+            AddRect(width, height, left, top, pw, 4,
+                0.85f, 0.60f, 0.26f, 1.0f);
+            AddText(width, height, left + 24, top + 26,
+                m_mode == Mode::Save ? "CREATE NAMED SAVE" : "LOAD SAVED WORLD",
+                3, 0.97f, 0.97f, 0.97f, 26);
+            DrawButton(width, height, left + pw - 112, top + 18,
+                95, 38, "CLOSE", true);
+
             if (m_mode == Mode::Save)
             {
-                AddText(width,height,left+24,top+92,"ENTER A NAME FOR THIS SNAPSHOT",2,
-                        0.77f,0.82f,0.86f,35);
-                AddRect(width,height,left+24,top+130,pw-48,42,0.13f,0.17f,0.23f,1.0f);
-                AddText(width,height,left+36,top+143,m_name+"_",2,1,1,1,37);
-                DrawButton(width,height,left+24,top+188,172,42,"SAVE NEW SLOT",true);
-                AddText(width,height,left+24,top+262,"MANUAL SAVES ARE NEVER OVERWRITTEN",2,
-                        0.79f,0.80f,0.83f,42);
-                AddText(width,height,left+24,top+290,"AUTOSAVE RETAINS TWO OLDER BACKUPS",2,
-                        0.79f,0.80f,0.83f,42);
-                AddText(width,height,left+24,top+ph-76,"ENTER TO SAVE - ESC TO CANCEL",2,
-                        0.84f,0.65f,0.37f,40);
+                AddText(width, height, left + 24, top + 92,
+                    "ENTER A NAME FOR THIS SNAPSHOT", 2,
+                    0.77f, 0.82f, 0.86f, 35);
+                AddRect(width, height, left + 24, top + 130,
+                    pw - 48, 42, 0.13f, 0.17f, 0.23f, 1.0f);
+                AddText(width, height, left + 36, top + 143,
+                    m_name + "_", 2, 1, 1, 1, 37);
+                DrawButton(width, height, left + 24, top + 188,
+                    172, 42, "SAVE NEW SLOT", true);
+                AddText(width, height, left + 24, top + 262,
+                    "MANUAL SAVES ARE NEVER OVERWRITTEN", 2,
+                    0.79f, 0.80f, 0.83f, 42);
+                AddText(width, height, left + 24, top + 290,
+                    "AUTOSAVE RETAINS TWO OLDER BACKUPS", 2,
+                    0.79f, 0.80f, 0.83f, 42);
+                AddText(width, height, left + 24, top + ph - 76,
+                    "ENTER TO SAVE - ESC TO CANCEL", 2,
+                    0.84f, 0.65f, 0.37f, 40);
             }
             else
             {
                 const std::size_t perPage = static_cast<std::size_t>(std::clamp(
-                    static_cast<int>((ph-194.0f)/57.0f)+1,1,6));
-                const int maxPage = slots.empty()?0:
-                    static_cast<int>((slots.size()-1)/perPage);
-                m_page = std::clamp(m_page,0,maxPage);
-                const std::size_t start = static_cast<std::size_t>(m_page)*perPage;
+                    static_cast<int>((ph - 194.0f) / 57.0f) + 1, 1, 6));
+                const int maxPage = slots.empty() ? 0 :
+                    static_cast<int>((slots.size() - 1) / perPage);
+                m_page = std::clamp(m_page, 0, maxPage);
+                const std::size_t start = static_cast<std::size_t>(m_page) * perPage;
                 if (slots.empty())
-                    AddText(width,height,left+24,top+132,"NO SAVE FILES FOUND",2,1,0.75f,0.44f);
-                for (std::size_t i=0;i<perPage && start+i<slots.size();++i)
+                    AddText(width, height, left + 24, top + 132,
+                        "NO SAVE FILES FOUND", 2, 1, 0.75f, 0.44f);
+                for (std::size_t i = 0; i < perPage && start + i < slots.size(); ++i)
                 {
-                    const auto& slot=slots[start+i];
-                    const float ry=top+90+static_cast<float>(i)*57;
-                    AddRect(width,height,left+15,ry,pw-30,53,0.12f,0.15f,0.20f,0.96f);
-                    AddText(width,height,left+25,ry+17,slot.name,2,0.95f,0.95f,0.97f,
-                            std::max(1,static_cast<int>((pw-355)/12)));
-                    DrawButton(width,height,left+pw-327,ry+7,65,36,"LOAD",true);
-                    DrawButton(width,height,left+pw-254,ry+7,68,36,"BAK 1",slot.backupAvailable);
-                    DrawButton(width,height,left+pw-178,ry+7,68,36,"BAK 2",slot.olderBackupAvailable);
-                    DrawButton(width,height,left+pw-102,ry+7,84,36,"DELETE",true);
+                    const auto& slot = slots[start + i];
+                    const float ry = top + 90.0f + static_cast<float>(i) * 57.0f;
+                    AddRect(width, height, left + 15, ry, pw - 30, 53,
+                        0.12f, 0.15f, 0.20f, 0.96f);
+                    AddText(width, height, left + 25, ry + 17, slot.name, 2,
+                        0.95f, 0.95f, 0.97f,
+                        std::max(1, static_cast<int>((pw - 355) / 12)));
+                    DrawButton(width, height, left + pw - 327, ry + 7,
+                        65, 36, "LOAD", true);
+                    DrawButton(width, height, left + pw - 254, ry + 7,
+                        68, 36, "BAK 1", slot.backupAvailable);
+                    DrawButton(width, height, left + pw - 178, ry + 7,
+                        68, 36, "BAK 2", slot.olderBackupAvailable);
+                    DrawButton(width, height, left + pw - 102, ry + 7,
+                        84, 36, "DELETE", true);
                 }
-                DrawButton(width,height,left+24,top+ph-57,96,38,"PREV",m_page>0);
-                DrawButton(width,height,left+132,top+ph-57,96,38,"NEXT",start+perPage<slots.size());
-                AddText(width,height,left+252,top+ph-45,"DELETE IS PERMANENT",2,
-                        0.87f,0.65f,0.40f,30);
+                DrawButton(width, height, left + 24, top + ph - 57,
+                    96, 38, "PREV", m_page > 0);
+                DrawButton(width, height, left + 132, top + ph - 57,
+                    96, 38, "NEXT", start + perPage < slots.size());
+                AddText(width, height, left + 252, top + ph - 45,
+                    "DELETE IS PERMANENT", 2,
+                    0.87f, 0.65f, 0.40f, 30);
             }
+
             if (!m_message.empty())
-                AddText(width,height,left+24,top+ph-76,m_message,2,1.0f,0.71f,0.42f,48);
+                AddText(width, height, left + 24, top + ph - 76,
+                    m_message, 2, 1.0f, 0.71f, 0.42f, 48);
 
             if (m_confirmDelete)
             {
-                AddRect(width,height,left,top,pw,ph,0.0f,0.0f,0.0f,0.84f);
-                const float boxLeft = left+(pw-470.0f)*0.5f;
-                const float boxTop = top+(ph-216.0f)*0.5f;
-                AddRect(width,height,boxLeft,boxTop,470,216,0.095f,0.11f,0.15f,1.0f);
-                AddRect(width,height,boxLeft,boxTop,470,4,0.91f,0.32f,0.21f,1.0f);
-                AddText(width,height,boxLeft+25,boxTop+23,"DELETE THIS WORLD?",3,
-                        1.0f,0.65f,0.52f,23);
-                AddText(width,height,boxLeft+25,boxTop+75,m_deleteSlotName,2,
-                        0.95f,0.95f,0.97f,35);
-                AddText(width,height,boxLeft+25,boxTop+109,"SAVE AND BOTH BACKUPS WILL BE LOST",2,
-                        1.0f,0.67f,0.49f,37);
-                DrawButton(width,height,boxLeft+25,boxTop+155,199,40,"DELETE FOREVER",true);
-                DrawButton(width,height,boxLeft+238,boxTop+155,199,40,"CANCEL",true);
+                m_queuedText.clear();
+                AddRect(width, height, left, top, pw, ph,
+                    0.0f, 0.0f, 0.0f, 0.84f);
+                const float boxWidth = std::min(470.0f, pw - 24.0f);
+                const float boxLeft = left + (pw - boxWidth) * 0.5f;
+                const float boxTop = top + (ph - 216.0f) * 0.5f;
+                const float buttonWidth = (boxWidth - 63.0f) * 0.5f;
+                AddRect(width, height, boxLeft, boxTop, boxWidth, 216,
+                    0.095f, 0.11f, 0.15f, 1.0f);
+                AddRect(width, height, boxLeft, boxTop, boxWidth, 4,
+                    0.91f, 0.32f, 0.21f, 1.0f);
+                AddText(width, height, boxLeft + 25, boxTop + 23,
+                    "DELETE THIS WORLD?", 3, 1.0f, 0.65f, 0.52f, 23);
+                AddText(width, height, boxLeft + 25, boxTop + 75,
+                    m_deleteSlotName, 2, 0.95f, 0.95f, 0.97f, 35);
+                AddText(width, height, boxLeft + 25, boxTop + 109,
+                    "SAVE AND BACKUPS WILL BE LOST", 2,
+                    1.0f, 0.67f, 0.49f, 37);
+                DrawButton(width, height, boxLeft + 25, boxTop + 155,
+                    buttonWidth, 40, "DELETE FOREVER", true);
+                DrawButton(width, height,
+                    boxLeft + 25 + buttonWidth + 13, boxTop + 155,
+                    buttonWidth, 40, "CANCEL", true);
             }
         }
         if (m_vertices.empty()) return;
@@ -561,5 +582,15 @@ namespace industrial_frontier
         if (oldDepth) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
         if (oldCull) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
         if (oldBlend) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+        if (m_textRenderer != nullptr && !m_queuedText.empty())
+        {
+            m_textRenderer->BeginFrame(width, height);
+            for (const QueuedText& queued : m_queuedText)
+            {
+                m_textRenderer->DrawText(queued.text, queued.x, queued.y,
+                    queued.scale, queued.color);
+            }
+            m_textRenderer->EndFrame();
+        }
     }
 }

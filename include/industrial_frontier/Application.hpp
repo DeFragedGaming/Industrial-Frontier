@@ -6,8 +6,16 @@
 #include "industrial_frontier/ui/MainMenu.hpp"
 #include "industrial_frontier/ui/UIRenderer.hpp"
 #include "industrial_frontier/ui/GameHUD.hpp"
+#include "industrial_frontier/ui/InventoryOverlay.hpp"
+#include "industrial_frontier/ui/FieldGuideOverlay.hpp"
+#include "industrial_frontier/ui/ProcessingOverlay.hpp"
+#include "industrial_frontier/ui/SeedOverlay.hpp"
+#include "industrial_frontier/ui/PrimitiveCraftingOverlay.hpp"
+#include "industrial_frontier/ui/ItemWorkspaceOverlay.hpp"
+#include "industrial_frontier/resources/FieldGuideCatalog.hpp"
 #include "industrial_frontier/ui/SaveOverlay.hpp"
 #include "industrial_frontier/save/SaveManager.hpp"
+#include "industrial_frontier/resources/MineralDatabase.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -41,6 +49,18 @@ namespace industrial_frontier
         bool LoadWorld(const std::string& id, int backupIndex);
         bool ContinueWorld();
         void DisplaySaveError(const std::string& message);
+        void ToggleProcessing();
+        void RunProcessing(ProcessingOperation operation);
+        void HandleSeedAction(const SeedUiResult& result);
+        bool BeginNewWorld(int seed);
+        void CaptureStorageLayout(WorldSave& world);
+        PlayerInventory& ActiveStorage();
+        const PlayerInventory& ActiveStorage() const;
+        void CommitActiveChest();
+        ItemWidgetHit HitItemUI(float x, float y) const;
+        void DropItem(const ItemWidgetHit& source, const ItemWidgetHit& target);
+        std::string DragLabel(const ItemWidgetHit& hit,
+            const InventoryState& inventory, const InventoryState& chest) const;
 
         bool m_initialized = false;
         bool m_running = false;
@@ -49,6 +69,19 @@ namespace industrial_frontier
         bool m_worldActive = false;
         bool m_worldPlayed = false;
         bool m_pausedForPanel = false;
+        bool m_inventoryOpen = false;
+        bool m_storageOpen = false;
+        ItemWidgetHit m_dragStart{};
+        float m_dragX = 0.0f;
+        float m_dragY = 0.0f;
+        bool m_guideOpen = false;
+        bool m_processingOpen = false;
+        bool m_craftingOpen = false;
+        std::size_t m_craftingSelected = 0;
+        std::string m_craftingMessage;
+        std::size_t m_processingSelected = 0;
+        std::string m_processingMessage;
+        std::size_t m_inventorySelected = 0;
         float m_autosaveElapsed = 0.0f;
 
         SDL_Window* m_window = nullptr;
@@ -72,9 +105,22 @@ namespace industrial_frontier
         Renderer m_renderer;
         UIRenderer m_uiRenderer;
         GameHUD m_gameHUD;
+        InventoryOverlay m_inventoryOverlay;
+        ItemWorkspaceOverlay m_itemWorkspace;
+        ItemLayout m_itemLayout;
+        PlayerInventory m_storage;
+        PlayerInventory m_chestStorage;
+        std::uint64_t m_activeChestId = 0;
+        ItemLayout::Grid m_starterStorageSlots{};
+        FieldGuideOverlay m_fieldGuide;
+        ProcessingOverlay m_processingOverlay;
+        SeedOverlay m_seedOverlay;
+        PrimitiveCraftingOverlay m_craftingOverlay;
         MainMenu m_mainMenu;
         GameFlow m_gameFlow;
         SaveManager m_saveManager;
+        MineralDatabase m_mineralDatabase;
+        FieldGuideCatalog m_fieldGuideCatalog;
         SaveOverlay m_saveOverlay;
         std::vector<SaveSlotInfo> m_saveSlots;
     };

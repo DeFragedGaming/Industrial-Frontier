@@ -1,9 +1,12 @@
 #include "industrial_frontier/world/VoxelMesher.hpp"
+#include "industrial_frontier/resources/GeologyGenerator.hpp"
+#include "industrial_frontier/resources/OutcropInteraction.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <utility>
 #include <vector>
 
@@ -139,7 +142,8 @@ namespace industrial_frontier
         TerrainVertex CreateVertex(
             const VoxelTerrain& terrain,
             const Vec3& position,
-            float epsilon)
+            float epsilon,
+            const std::vector<GeologicalDeposit>& veins)
         {
             TerrainVertex vertex{};
             const Vec3 normal = CalculateNormal(terrain, position, epsilon);
@@ -219,6 +223,45 @@ namespace industrial_frontier
             Vec3 color = MixColor(underground, exposedSurface, surfaceAmount);
             color = MixColor(color, rock,
                 rockRim * (1.0f - SmoothRange(6.0f, 12.0f, depth)));
+            color = MixColor(
+                color,
+                {0.19f, 0.21f, 0.24f},
+                1.0f - SmoothRange(
+                    VoxelTerrain::BedrockSurfaceY,
+                    VoxelTerrain::BedrockSurfaceY + 3.0f,
+                    position.y)
+            );
+            if (depth > 2.5f &&
+                position.y > VoxelTerrain::BedrockSurfaceY + 2.0f)
+            {
+                float strongest = 0.0f;
+                const GeologicalDeposit* visibleVein = nullptr;
+                for (const GeologicalDeposit& vein : veins)
+                {
+                    const float dx = std::abs(position.x - vein.x);
+                    const float dy = std::abs(position.y - vein.y);
+                    const float dz = std::abs(position.z - vein.z);
+                    if (dx > 45.0f || dy > 45.0f || dz > 45.0f)
+                    {
+                        continue;
+                    }
+                    const float strength = GeologyGenerator::VeinInfluence(
+                        vein, position.x, position.y, position.z);
+                    if (strength > strongest)
+                    {
+                        strongest = strength;
+                        visibleVein = &vein;
+                    }
+                }
+                if (visibleVein && strongest > 0.04f)
+                {
+                    const Vec3 ore = {visibleVein->color[0],
+                        visibleVein->color[1], visibleVein->color[2]};
+                    color = MixColor(color, ore,
+                        std::clamp(strongest * 3.3f, 0.0f, 0.92f));
+                }
+            }
+
             const float variation = ColorVariation(position);
 
             vertex.color[0] = std::clamp(color.x * variation, 0.0f, 1.0f);
@@ -233,7 +276,8 @@ namespace industrial_frontier
             Vec3 a,
             Vec3 b,
             Vec3 c,
-            float epsilon)
+            float epsilon,
+            const std::vector<GeologicalDeposit>& veins)
         {
             const Vec3 edgeA = Subtract(b, a);
             const Vec3 edgeB = Subtract(c, a);
@@ -257,9 +301,9 @@ namespace industrial_frontier
 
             const unsigned int base =
                 static_cast<unsigned int>(mesh.vertices.size());
-            mesh.vertices.push_back(CreateVertex(terrain, a, epsilon));
-            mesh.vertices.push_back(CreateVertex(terrain, b, epsilon));
-            mesh.vertices.push_back(CreateVertex(terrain, c, epsilon));
+            mesh.vertices.push_back(CreateVertex(terrain, a, epsilon, veins));
+            mesh.vertices.push_back(CreateVertex(terrain, b, epsilon, veins));
+            mesh.vertices.push_back(CreateVertex(terrain, c, epsilon, veins));
             mesh.indices.push_back(base);
             mesh.indices.push_back(base + 1);
             mesh.indices.push_back(base + 2);
@@ -270,7 +314,8 @@ namespace industrial_frontier
             const std::array<Sample, 8>& cube,
             const int* tetrahedron,
             VoxelMesh& mesh,
-            float epsilon)
+            float epsilon,
+            const std::vector<GeologicalDeposit>& veins)
         {
             int inside[4]{};
             int outside[4]{};
@@ -302,7 +347,7 @@ namespace industrial_frontier
                     Interpolate(cube[inside[0]], cube[outside[0]]),
                     Interpolate(cube[inside[0]], cube[outside[1]]),
                     Interpolate(cube[inside[0]], cube[outside[2]]),
-                    epsilon
+                    epsilon, veins
                 );
                 return;
             }
@@ -314,7 +359,7 @@ namespace industrial_frontier
                     Interpolate(cube[outside[0]], cube[inside[0]]),
                     Interpolate(cube[outside[0]], cube[inside[1]]),
                     Interpolate(cube[outside[0]], cube[inside[2]]),
-                    epsilon
+                    epsilon, veins
                 );
                 return;
             }
@@ -324,8 +369,160 @@ namespace industrial_frontier
             const Vec3 c = Interpolate(cube[inside[1]], cube[outside[0]]);
             const Vec3 d = Interpolate(cube[inside[1]], cube[outside[1]]);
 
-            AddTriangle(terrain, mesh, a, b, c, epsilon);
-            AddTriangle(terrain, mesh, b, d, c, epsilon);
+            AddTriangle(terrain, mesh, a, b, c, epsilon, veins);
+            AddTriangle(terrain, mesh, b, d, c, epsilon, veins);
+        }
+
+        void AppendRockTriangle(VoxelMesh& mesh,
+            const Vec3& a, const Vec3& b, const Vec3& c,
+            const Vec3& color)
+        {
+            const Vec3 face = Cross(Subtract(b, a), Subtract(c, a));
+            if (Dot(face, face) < 0.00001f)
+            {
+                return;
+            }
+            const Vec3 normal = Normalize(face);
+            const unsigned int index =
+                static_cast<unsigned int>(mesh.vertices.size());
+            for (const Vec3& point : {a, b, c})
+            {
+                TerrainVertex vertex{};
+                vertex.position[0] = point.x;
+                vertex.position[1] = point.y;
+                vertex.position[2] = point.z;
+                vertex.normal[0] = normal.x;
+                vertex.normal[1] = normal.y;
+                vertex.normal[2] = normal.z;
+                vertex.color[0] = color.x;
+                vertex.color[1] = color.y;
+                vertex.color[2] = color.z;
+                mesh.vertices.push_back(vertex);
+            }
+            mesh.indices.push_back(index);
+            mesh.indices.push_back(index + 1);
+            mesh.indices.push_back(index + 2);
+        }
+
+        void AppendOutcropMesh(
+            VoxelMesh& mesh, const VoxelTerrain& terrain,
+            const GeologicalDeposit& deposit)
+        {
+            OutcropCollisionShape shape{};
+            if (!BuildOutcropCollisionShape(terrain, deposit, shape))
+            {
+                return;
+            }
+
+            const Vec3 color = {
+                deposit.color[0], deposit.color[1], deposit.color[2]
+            };
+            std::array<std::array<Vec3, OutcropSideCount>, OutcropRingCount> rings{};
+            for (int ring = 0; ring < OutcropRingCount; ++ring)
+            {
+                const float ringY = OutcropRingY(shape, ring);
+                const float ringRadius = shape.radius *
+                    OutcropRingRadiusFactor(shape, ring);
+                for (int i = 0; i < OutcropSideCount; ++i)
+                {
+                    const float angle = 6.28318530718f *
+                        static_cast<float>(i) / static_cast<float>(OutcropSideCount);
+                    const float radius = ringRadius *
+                        OutcropAngularVariation(shape, angle);
+                    rings[ring][i] = {
+                        shape.x + radius * std::cos(angle),
+                        ringY,
+                        shape.z + radius * std::sin(angle)
+                    };
+                }
+            }
+
+            const Vec3 bottom = {shape.x, OutcropBottomY(shape), shape.z};
+            const Vec3 top = {shape.x, OutcropTopY(shape), shape.z};
+            for (int i = 0; i < OutcropSideCount; ++i)
+            {
+                const int j = (i + 1) % OutcropSideCount;
+                const float variation = 0.84f +
+                    static_cast<float>((i * 37 + (deposit.id & 31u)) % 9) *
+                    0.035f;
+                const Vec3 facet = {
+                    std::min(color.x * variation, 1.0f),
+                    std::min(color.y * variation, 1.0f),
+                    std::min(color.z * variation, 1.0f)
+                };
+                for (int ring = 0; ring + 1 < OutcropRingCount; ++ring)
+                {
+                    const float tint = shape.kind == DepositKind::PermanentNode
+                        ? (ring < 4 ? 0.90f : 1.10f) : 1.0f;
+                    const Vec3 surface = {
+                        std::min(1.0f, facet.x * tint),
+                        std::min(1.0f, facet.y * tint),
+                        std::min(1.0f, facet.z * tint)
+                    };
+                    AppendRockTriangle(mesh, rings[ring][i],
+                        rings[ring + 1][i], rings[ring + 1][j], surface);
+                    AppendRockTriangle(mesh, rings[ring][i],
+                        rings[ring + 1][j], rings[ring][j], surface);
+                }
+                AppendRockTriangle(mesh, rings[OutcropRingCount - 1][i],
+                    top, rings[OutcropRingCount - 1][j],
+                    shape.kind == DepositKind::PermanentNode
+                        ? Vec3{std::min(1.0f, facet.x * 1.10f),
+                            std::min(1.0f, facet.y * 1.10f),
+                            std::min(1.0f, facet.z * 1.10f)}
+                        : facet);
+                AppendRockTriangle(mesh, bottom,
+                    rings[0][i], rings[0][j], facet);
+            }
+
+            if (shape.kind == DepositKind::PermanentNode)
+            {
+                const Vec3 seamColor = {
+                    std::max(0.025f, color.x * 0.27f),
+                    std::max(0.025f, color.y * 0.27f),
+                    std::max(0.025f, color.z * 0.27f)
+                };
+                const auto offsetPoint = [](Vec3 point)
+                {
+                    point.y += 0.018f;
+                    return point;
+                };
+                const auto blendPoint = [](const Vec3& a,
+                    const Vec3& b, float t)
+                {
+                    return Vec3{a.x + (b.x - a.x) * t,
+                        a.y + (b.y - a.y) * t,
+                        a.z + (b.z - a.z) * t};
+                };
+                const int seamPhase = static_cast<int>(deposit.id & 1ull);
+                for (int seam = seamPhase; seam < OutcropSideCount;
+                    seam += 2)
+                {
+                    const int leftIndex =
+                        (seam + OutcropSideCount - 1) % OutcropSideCount;
+                    const int rightIndex = (seam + 1) % OutcropSideCount;
+                    const auto sides = [&](int ring)
+                    {
+                        const Vec3 mid = rings[ring][seam];
+                        const float width = 0.065f +
+                            0.012f * std::sin(static_cast<float>(seam + ring));
+                        return std::array<Vec3, 2>{
+                            offsetPoint(blendPoint(mid, rings[ring][leftIndex], width)),
+                            offsetPoint(blendPoint(mid, rings[ring][rightIndex], width))
+                        };
+                    };
+                    for (int ring = 4; ring < OutcropRingCount - 1; ++ring)
+                    {
+                        const auto outer = sides(ring);
+                        const auto inner = sides(ring + 1);
+                        AppendRockTriangle(mesh, outer[0], inner[0], inner[1], seamColor);
+                        AppendRockTriangle(mesh, outer[0], inner[1], outer[1], seamColor);
+                    }
+                    const auto inner = sides(OutcropRingCount - 1);
+                    const Vec3 center = offsetPoint(top);
+                    AppendRockTriangle(mesh, inner[0], center, inner[1], seamColor);
+                }
+            }
         }
     }
 
@@ -372,6 +569,13 @@ namespace industrial_frontier
 
         const float startX = static_cast<float>(chunkX) * chunkSize;
         const float startZ = static_cast<float>(chunkZ) * chunkSize;
+
+        const GeologyGenerator* geology = terrain.GetGeology();
+        const std::vector<GeologicalDeposit> veins = geology
+            ? geology->FindUndergroundVeins(startX, startX + chunkSize,
+                m_settings.minimumY, m_settings.maximumY,
+                startZ, startZ + chunkSize)
+            : std::vector<GeologicalDeposit>{};
         const float epsilon = std::max(
             std::min(horizontalSpacing, verticalSpacing) * 0.25f,
             0.05f
@@ -451,10 +655,24 @@ namespace industrial_frontier
                     for (const auto& tetrahedron : Tetrahedra)
                     {
                         PolygonizeTetrahedron(
-                            terrain, cube, tetrahedron, output, epsilon
+                            terrain, cube, tetrahedron, output, epsilon, veins
                         );
                     }
                 }
+            }
+        }
+
+        if (geology)
+        {
+            const auto outcrops = geology->FindSurfaceDeposits(
+                startX, startX + chunkSize, startZ, startZ + chunkSize);
+            for (const GeologicalDeposit& deposit : outcrops)
+            {
+                if (terrain.IsDepositDepleted(deposit.id))
+                {
+                    continue;
+                }
+                AppendOutcropMesh(output, terrain, deposit);
             }
         }
 

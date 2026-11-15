@@ -1,731 +1,692 @@
-
 #include "industrial_frontier/ui/UIRenderer.hpp"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_opengl.h>
-#ifdef DrawText
-#undef DrawText
-#endif
+#include <SDL3_ttf/SDL_ttf.h>
 
 #include <algorithm>
 #include <array>
-#include <cctype>
 #include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <string>
-#include <string_view>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
+#ifdef DrawText
+#undef DrawText
+#endif
 
 namespace industrial_frontier
 {
     namespace
     {
-        using CreateShaderFn =
-            GLuint(APIENTRY*)(GLenum);
+        using CreateShaderFn = GLuint(APIENTRY*)(GLenum);
+        using ShaderSourceFn = void(APIENTRY*)(GLuint, GLsizei, const GLchar* const*, const GLint*);
+        using CompileShaderFn = void(APIENTRY*)(GLuint);
+        using GetShaderivFn = void(APIENTRY*)(GLuint, GLenum, GLint*);
+        using GetShaderInfoLogFn = void(APIENTRY*)(GLuint, GLsizei, GLsizei*, GLchar*);
+        using DeleteShaderFn = void(APIENTRY*)(GLuint);
+        using CreateProgramFn = GLuint(APIENTRY*)();
+        using AttachShaderFn = void(APIENTRY*)(GLuint, GLuint);
+        using LinkProgramFn = void(APIENTRY*)(GLuint);
+        using GetProgramivFn = void(APIENTRY*)(GLuint, GLenum, GLint*);
+        using GetProgramInfoLogFn = void(APIENTRY*)(GLuint, GLsizei, GLsizei*, GLchar*);
+        using DeleteProgramFn = void(APIENTRY*)(GLuint);
+        using UseProgramFn = void(APIENTRY*)(GLuint);
+        using GetUniformLocationFn = GLint(APIENTRY*)(GLuint, const GLchar*);
+        using Uniform1iFn = void(APIENTRY*)(GLint, GLint);
+        using GenVertexArraysFn = void(APIENTRY*)(GLsizei, GLuint*);
+        using BindVertexArrayFn = void(APIENTRY*)(GLuint);
+        using DeleteVertexArraysFn = void(APIENTRY*)(GLsizei, const GLuint*);
+        using GenBuffersFn = void(APIENTRY*)(GLsizei, GLuint*);
+        using BindBufferFn = void(APIENTRY*)(GLenum, GLuint);
+        using BufferDataFn = void(APIENTRY*)(GLenum, GLsizeiptr, const void*, GLenum);
+        using DeleteBuffersFn = void(APIENTRY*)(GLsizei, const GLuint*);
+        using EnableVertexAttribArrayFn = void(APIENTRY*)(GLuint);
+        using VertexAttribPointerFn = void(APIENTRY*)(GLuint, GLint, GLenum, GLboolean, GLsizei, const void*);
+        using DrawArraysFn = void(APIENTRY*)(GLenum, GLint, GLsizei);
+        using ActiveTextureFn = void(APIENTRY*)(GLenum);
 
-        using ShaderSourceFn =
-            void(APIENTRY*)(
-                GLuint,
-                GLsizei,
-                const GLchar* const*,
-                const GLint*
-            );
-
-        using CompileShaderFn =
-            void(APIENTRY*)(GLuint);
-
-        using GetShaderivFn =
-            void(APIENTRY*)(GLuint, GLenum, GLint*);
-
-        using GetShaderInfoLogFn =
-            void(APIENTRY*)(
-                GLuint,
-                GLsizei,
-                GLsizei*,
-                GLchar*
-            );
-
-        using DeleteShaderFn =
-            void(APIENTRY*)(GLuint);
-
-        using CreateProgramFn =
-            GLuint(APIENTRY*)();
-
-        using AttachShaderFn =
-            void(APIENTRY*)(GLuint, GLuint);
-
-        using LinkProgramFn =
-            void(APIENTRY*)(GLuint);
-
-        using GetProgramivFn =
-            void(APIENTRY*)(GLuint, GLenum, GLint*);
-
-        using GetProgramInfoLogFn =
-            void(APIENTRY*)(
-                GLuint,
-                GLsizei,
-                GLsizei*,
-                GLchar*
-            );
-
-        using DeleteProgramFn =
-            void(APIENTRY*)(GLuint);
-
-        using UseProgramFn =
-            void(APIENTRY*)(GLuint);
-
-        using GetUniformLocationFn =
-            GLint(APIENTRY*)(GLuint, const GLchar*);
-
-        using Uniform2fFn =
-            void(APIENTRY*)(GLint, GLfloat, GLfloat);
-
-        using Uniform4fFn =
-            void(APIENTRY*)(
-                GLint,
-                GLfloat,
-                GLfloat,
-                GLfloat,
-                GLfloat
-            );
-
-        using GenVertexArraysFn =
-            void(APIENTRY*)(GLsizei, GLuint*);
-
-        using BindVertexArrayFn =
-            void(APIENTRY*)(GLuint);
-
-        using DeleteVertexArraysFn =
-            void(APIENTRY*)(GLsizei, const GLuint*);
-
-        using GenBuffersFn =
-            void(APIENTRY*)(GLsizei, GLuint*);
-
-        using BindBufferFn =
-            void(APIENTRY*)(GLenum, GLuint);
-
-        using BufferDataFn =
-            void(APIENTRY*)(
-                GLenum,
-                std::ptrdiff_t,
-                const void*,
-                GLenum
-            );
-
-        using DeleteBuffersFn =
-            void(APIENTRY*)(GLsizei, const GLuint*);
-
-        using EnableVertexAttribArrayFn =
-            void(APIENTRY*)(GLuint);
-
-        using VertexAttribPointerFn =
-            void(APIENTRY*)(
-                GLuint,
-                GLint,
-                GLenum,
-                GLboolean,
-                GLsizei,
-                const void*
-            );
-
-        struct GLFunctions
+        template<class T>
+        bool Load(T& function, const char* name)
         {
-            CreateShaderFn createShader = nullptr;
-            ShaderSourceFn shaderSource = nullptr;
-            CompileShaderFn compileShader = nullptr;
-            GetShaderivFn getShaderiv = nullptr;
-            GetShaderInfoLogFn getShaderInfoLog = nullptr;
-            DeleteShaderFn deleteShader = nullptr;
-
-            CreateProgramFn createProgram = nullptr;
-            AttachShaderFn attachShader = nullptr;
-            LinkProgramFn linkProgram = nullptr;
-            GetProgramivFn getProgramiv = nullptr;
-            GetProgramInfoLogFn getProgramInfoLog = nullptr;
-            DeleteProgramFn deleteProgram = nullptr;
-            UseProgramFn useProgram = nullptr;
-
-            GetUniformLocationFn getUniformLocation = nullptr;
-            Uniform2fFn uniform2f = nullptr;
-            Uniform4fFn uniform4f = nullptr;
-
-            GenVertexArraysFn genVertexArrays = nullptr;
-            BindVertexArrayFn bindVertexArray = nullptr;
-            DeleteVertexArraysFn deleteVertexArrays = nullptr;
-
-            GenBuffersFn genBuffers = nullptr;
-            BindBufferFn bindBuffer = nullptr;
-            BufferDataFn bufferData = nullptr;
-            DeleteBuffersFn deleteBuffers = nullptr;
-
-            EnableVertexAttribArrayFn enableVertexAttribArray = nullptr;
-            VertexAttribPointerFn vertexAttribPointer = nullptr;
-        };
-
-        GLFunctions gl{};
-
-        template<typename T>
-        bool LoadFunction(T& function, const char* name)
-        {
-            function = reinterpret_cast<T>(
-                SDL_GL_GetProcAddress(name)
-            );
-
-            if (!function)
-            {
-                std::cerr
-                    << "Missing OpenGL function: "
-                    << name << '\n';
-
-                return false;
-            }
-
-            return true;
+            function = reinterpret_cast<T>(SDL_GL_GetProcAddress(name));
+            return function != nullptr;
         }
 
-        bool LoadFunctions()
+        std::filesystem::path LocateFont()
+        {
+            std::vector<std::filesystem::path> options;
+#ifdef _WIN32
+            const char* windir = std::getenv("WINDIR");
+            const std::filesystem::path root = windir ? windir : "C:\\Windows";
+            for (const char* name : {"segoeui.ttf", "seguisb.ttf", "arial.ttf", "tahoma.ttf", "verdana.ttf"})
+            {
+                options.push_back(root / "Fonts" / name);
+            }
+#else
+            for (const char* name : {
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
+                "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+                "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+                "/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf"
+            })
+            {
+                options.emplace_back(name);
+            }
+#endif
+            for (const auto& path : options)
+            {
+                std::error_code error;
+                if (std::filesystem::is_regular_file(path, error))
+                {
+                    return path;
+                }
+            }
+            return {};
+        }
+
+        int FontPixels(float scale)
+        {
+            return std::clamp(static_cast<int>(14.5f + (scale - 1.0f) * 5.0f + 0.5f), 13, 32);
+        }
+
+        std::string CacheKey(const std::string& text, int pointSize)
+        {
+            return std::to_string(pointSize) + ":" + text;
+        }
+    }
+
+    struct UIRenderer::Impl
+    {
+        struct GLFns
+        {
+            CreateShaderFn createShader{};
+            ShaderSourceFn shaderSource{};
+            CompileShaderFn compileShader{};
+            GetShaderivFn getShaderiv{};
+            GetShaderInfoLogFn getShaderInfoLog{};
+            DeleteShaderFn deleteShader{};
+            CreateProgramFn createProgram{};
+            AttachShaderFn attachShader{};
+            LinkProgramFn linkProgram{};
+            GetProgramivFn getProgramiv{};
+            GetProgramInfoLogFn getProgramInfoLog{};
+            DeleteProgramFn deleteProgram{};
+            UseProgramFn useProgram{};
+            GetUniformLocationFn getUniformLocation{};
+            Uniform1iFn uniform1i{};
+            GenVertexArraysFn genVertexArrays{};
+            BindVertexArrayFn bindVertexArray{};
+            DeleteVertexArraysFn deleteVertexArrays{};
+            GenBuffersFn genBuffers{};
+            BindBufferFn bindBuffer{};
+            BufferDataFn bufferData{};
+            DeleteBuffersFn deleteBuffers{};
+            EnableVertexAttribArrayFn enableVertexAttribArray{};
+            VertexAttribPointerFn vertexAttribPointer{};
+            DrawArraysFn drawArrays{};
+            ActiveTextureFn activeTexture{};
+        } gl;
+
+        struct DrawCall
+        {
+            bool text = false;
+            bool image = false;
+            float x = 0.0f;
+            float y = 0.0f;
+            float width = 0.0f;
+            float height = 0.0f;
+            int fontSize = 14;
+            std::string content;
+            UIColor color;
+        };
+
+        struct CachedTexture
+        {
+            GLuint texture = 0;
+            int width = 0;
+            int height = 0;
+            std::uint64_t usedFrame = 0;
+        };
+
+        GLuint program = 0;
+        GLuint vertexArray = 0;
+        GLuint vertexBuffer = 0;
+        GLint textureLocation = -1;
+        GLint useTextureLocation = -1;
+        TTF_Font* font = nullptr;
+        bool ownsTtf = false;
+        int currentFontSize = 0;
+        int viewportWidth = 1;
+        int viewportHeight = 1;
+        std::uint64_t frame = 0;
+        std::vector<DrawCall> calls;
+        std::unordered_map<std::string, CachedTexture> textures;
+        std::unordered_map<std::string, CachedTexture> iconTextures;
+        std::unordered_map<std::string, bool> missingIcons;
+        std::unordered_map<std::string, std::pair<int,int>> measured;
+
+        bool LoadGL()
         {
             bool success = true;
-
-#define LOAD_GL(member, name) \
-    success = LoadFunction(gl.member, name) && success
-
-            LOAD_GL(createShader, "glCreateShader");
-            LOAD_GL(shaderSource, "glShaderSource");
-            LOAD_GL(compileShader, "glCompileShader");
-            LOAD_GL(getShaderiv, "glGetShaderiv");
-            LOAD_GL(getShaderInfoLog, "glGetShaderInfoLog");
-            LOAD_GL(deleteShader, "glDeleteShader");
-
-            LOAD_GL(createProgram, "glCreateProgram");
-            LOAD_GL(attachShader, "glAttachShader");
-            LOAD_GL(linkProgram, "glLinkProgram");
-            LOAD_GL(getProgramiv, "glGetProgramiv");
-            LOAD_GL(getProgramInfoLog, "glGetProgramInfoLog");
-            LOAD_GL(deleteProgram, "glDeleteProgram");
-            LOAD_GL(useProgram, "glUseProgram");
-
-            LOAD_GL(
-                getUniformLocation,
-                "glGetUniformLocation"
-            );
-
-            LOAD_GL(uniform2f, "glUniform2f");
-            LOAD_GL(uniform4f, "glUniform4f");
-
-            LOAD_GL(genVertexArrays, "glGenVertexArrays");
-            LOAD_GL(bindVertexArray, "glBindVertexArray");
-
-            LOAD_GL(
-                deleteVertexArrays,
-                "glDeleteVertexArrays"
-            );
-
-            LOAD_GL(genBuffers, "glGenBuffers");
-            LOAD_GL(bindBuffer, "glBindBuffer");
-            LOAD_GL(bufferData, "glBufferData");
-            LOAD_GL(deleteBuffers, "glDeleteBuffers");
-
-            LOAD_GL(
-                enableVertexAttribArray,
-                "glEnableVertexAttribArray"
-            );
-
-            LOAD_GL(
-                vertexAttribPointer,
-                "glVertexAttribPointer"
-            );
-
-#undef LOAD_GL
-
+            success &= Load(gl.createShader, "glCreateShader");
+            success &= Load(gl.shaderSource, "glShaderSource");
+            success &= Load(gl.compileShader, "glCompileShader");
+            success &= Load(gl.getShaderiv, "glGetShaderiv");
+            success &= Load(gl.getShaderInfoLog, "glGetShaderInfoLog");
+            success &= Load(gl.deleteShader, "glDeleteShader");
+            success &= Load(gl.createProgram, "glCreateProgram");
+            success &= Load(gl.attachShader, "glAttachShader");
+            success &= Load(gl.linkProgram, "glLinkProgram");
+            success &= Load(gl.getProgramiv, "glGetProgramiv");
+            success &= Load(gl.getProgramInfoLog, "glGetProgramInfoLog");
+            success &= Load(gl.deleteProgram, "glDeleteProgram");
+            success &= Load(gl.useProgram, "glUseProgram");
+            success &= Load(gl.getUniformLocation, "glGetUniformLocation");
+            success &= Load(gl.uniform1i, "glUniform1i");
+            success &= Load(gl.genVertexArrays, "glGenVertexArrays");
+            success &= Load(gl.bindVertexArray, "glBindVertexArray");
+            success &= Load(gl.deleteVertexArrays, "glDeleteVertexArrays");
+            success &= Load(gl.genBuffers, "glGenBuffers");
+            success &= Load(gl.bindBuffer, "glBindBuffer");
+            success &= Load(gl.bufferData, "glBufferData");
+            success &= Load(gl.deleteBuffers, "glDeleteBuffers");
+            success &= Load(gl.enableVertexAttribArray, "glEnableVertexAttribArray");
+            success &= Load(gl.vertexAttribPointer, "glVertexAttribPointer");
+            success &= Load(gl.drawArrays, "glDrawArrays");
+            success &= Load(gl.activeTexture, "glActiveTexture");
             return success;
         }
 
-        constexpr const char* VertexSource = R"(
-            #version 330 core
-
-            layout(location = 0) in vec2 aPosition;
-
-            uniform vec2 uViewport;
-
-            void main()
-            {
-                vec2 normalized = aPosition / uViewport;
-
-                vec2 clipPosition = vec2(
-                    normalized.x * 2.0 - 1.0,
-                    1.0 - normalized.y * 2.0
-                );
-
-                gl_Position = vec4(
-                    clipPosition,
-                    0.0,
-                    1.0
-                );
-            }
-        )";
-
-        constexpr const char* FragmentSource = R"(
-            #version 330 core
-
-            out vec4 FragColor;
-
-            uniform vec4 uColor;
-
-            void main()
-            {
-                FragColor = uColor;
-            }
-        )";
-
-        GLuint CompileShader(
-            GLenum type,
-            const char* source)
+        GLuint Compile(GLenum type, const char* source)
         {
-            const GLuint shader = gl.createShader(type);
-
-            if (shader == 0)
-            {
-                return 0;
-            }
-
+            GLuint shader = gl.createShader(type);
             gl.shaderSource(shader, 1, &source, nullptr);
             gl.compileShader(shader);
-
-            GLint success = GL_FALSE;
-            gl.getShaderiv(shader, GL_COMPILE_STATUS, &success);
-
-            if (success != GL_TRUE)
+            GLint status = 0;
+            gl.getShaderiv(shader, 0x8B81, &status);
+            if (status == 0)
             {
-                std::array<char, 2048> log{};
-
-                gl.getShaderInfoLog(
-                    shader,
-                    static_cast<GLsizei>(log.size()),
-                    nullptr,
-                    log.data()
-                );
-
-                std::cerr
-                    << "UI shader compilation failed:\n"
-                    << log.data() << '\n';
-
+                char log[2048]{};
+                gl.getShaderInfoLog(shader, static_cast<GLsizei>(sizeof(log)), nullptr, log);
+                std::cerr << "UI font shader: " << log << '\n';
                 gl.deleteShader(shader);
                 return 0;
             }
-
             return shader;
         }
 
-        using Glyph = std::array<unsigned char, 7>;
-
-        Glyph GetGlyph(char character)
+        bool SetupShader()
         {
-            const char c = static_cast<char>(
-                std::toupper(
-                    static_cast<unsigned char>(character)
-                )
-            );
+            constexpr const char* vertexSource = R"(#version 330 core
+layout(location=0) in vec2 aPosition;
+layout(location=1) in vec2 aUV;
+layout(location=2) in vec4 aColor;
+out vec2 vUV;
+out vec4 vColor;
+void main()
+{
+    gl_Position = vec4(aPosition, 0.0, 1.0);
+    vUV = aUV;
+    vColor = aColor;
+}
+)";
+            constexpr const char* fragmentSource = R"(#version 330 core
+in vec2 vUV;
+in vec4 vColor;
+uniform sampler2D uTexture;
+uniform int uUseTexture;
+out vec4 fragColor;
+void main()
+{
+    if (uUseTexture == 0)
+    {
+        fragColor = vColor;
+    }
+    else if (uUseTexture == 1)
+    {
+        fragColor = vec4(vColor.rgb, vColor.a * texture(uTexture, vUV).a);
+    }
+    else
+    {
+        vec4 icon = texture(uTexture, vUV);
+        fragColor = vec4(icon.rgb * vColor.rgb, icon.a * vColor.a);
+    }
+}
+)";
 
-            switch (c)
+            const GLuint vertex = Compile(0x8B31, vertexSource);
+            const GLuint fragment = Compile(0x8B30, fragmentSource);
+            if (vertex == 0 || fragment == 0)
             {
-                case 'A': return {14,17,17,31,17,17,17};
-                case 'B': return {30,17,17,30,17,17,30};
-                case 'C': return {14,17,16,16,16,17,14};
-                case 'D': return {30,17,17,17,17,17,30};
-                case 'E': return {31,16,16,30,16,16,31};
-                case 'F': return {31,16,16,30,16,16,16};
-                case 'G': return {14,17,16,23,17,17,14};
-                case 'H': return {17,17,17,31,17,17,17};
-                case 'I': return {31,4,4,4,4,4,31};
-                case 'J': return {7,2,2,2,18,18,12};
-                case 'K': return {17,18,20,24,20,18,17};
-                case 'L': return {16,16,16,16,16,16,31};
-                case 'M': return {17,27,21,21,17,17,17};
-                case 'N': return {17,25,21,19,17,17,17};
-                case 'O': return {14,17,17,17,17,17,14};
-                case 'P': return {30,17,17,30,16,16,16};
-                case 'Q': return {14,17,17,17,21,18,13};
-                case 'R': return {30,17,17,30,20,18,17};
-                case 'S': return {15,16,16,14,1,1,30};
-                case 'T': return {31,4,4,4,4,4,4};
-                case 'U': return {17,17,17,17,17,17,14};
-                case 'V': return {17,17,17,17,17,10,4};
-                case 'W': return {17,17,17,21,21,21,10};
-                case 'X': return {17,17,10,4,10,17,17};
-                case 'Y': return {17,17,10,4,4,4,4};
-                case 'Z': return {31,1,2,4,8,16,31};
-
-                case '0': return {14,17,19,21,25,17,14};
-                case '1': return {4,12,4,4,4,4,14};
-                case '2': return {14,17,1,2,4,8,31};
-                case '3': return {30,1,1,14,1,1,30};
-                case '4': return {2,6,10,18,31,2,2};
-                case '5': return {31,16,16,30,1,1,30};
-                case '6': return {14,16,16,30,17,17,14};
-                case '7': return {31,1,2,4,8,8,8};
-                case '8': return {14,17,17,14,17,17,14};
-                case '9': return {14,17,17,15,1,1,14};
-
-                case '.': return {0,0,0,0,0,12,12};
-                case ',': return {0,0,0,0,4,4,8};
-                case ':': return {0,4,4,0,4,4,0};
-                case '-': return {0,0,0,31,0,0,0};
-                case '!': return {4,4,4,4,4,0,4};
-                case '?': return {14,17,1,2,4,0,4};
-                case '/': return {1,1,2,4,8,16,16};
-                case '\'': return {4,4,8,0,0,0,0};
-                case ' ': return {0,0,0,0,0,0,0};
-
-                default: return {31,17,5,9,4,0,4};
+                if (vertex != 0) gl.deleteShader(vertex);
+                if (fragment != 0) gl.deleteShader(fragment);
+                return false;
             }
-        }
-    }
+            program = gl.createProgram();
+            gl.attachShader(program, vertex);
+            gl.attachShader(program, fragment);
+            gl.linkProgram(program);
+            gl.deleteShader(vertex);
+            gl.deleteShader(fragment);
 
-    UIRenderer::~UIRenderer()
-    {
-        Shutdown();
-    }
+            GLint linked = 0;
+            gl.getProgramiv(program, 0x8B82, &linked);
+            if (linked == 0)
+            {
+                char log[2048]{};
+                gl.getProgramInfoLog(program, static_cast<GLsizei>(sizeof(log)), nullptr, log);
+                std::cerr << "UI font shader link: " << log << '\n';
+                return false;
+            }
+            textureLocation = gl.getUniformLocation(program, "uTexture");
+            useTextureLocation = gl.getUniformLocation(program, "uUseTexture");
 
-    bool UIRenderer::Initialize()
-    {
-        if (m_initialized)
-        {
+            gl.genVertexArrays(1, &vertexArray);
+            gl.genBuffers(1, &vertexBuffer);
+            gl.bindVertexArray(vertexArray);
+            gl.bindBuffer(0x8892, vertexBuffer);
+            constexpr GLsizei stride = static_cast<GLsizei>(sizeof(float) * 8);
+            gl.enableVertexAttribArray(0);
+            gl.vertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, stride, nullptr);
+            gl.enableVertexAttribArray(1);
+            gl.vertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<const void*>(sizeof(float) * 2));
+            gl.enableVertexAttribArray(2);
+            gl.vertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<const void*>(sizeof(float) * 4));
+            gl.bindVertexArray(0);
+            gl.bindBuffer(0x8892, 0);
             return true;
         }
 
-        if (!LoadFunctions())
+        bool SetSize(int size)
         {
-            return false;
+            if (currentFontSize == size)
+            {
+                return true;
+            }
+            if (!TTF_SetFontSize(font, static_cast<float>(size)))
+            {
+                return false;
+            }
+            currentFontSize = size;
+            return true;
         }
 
-        const GLuint vertexShader =
-            CompileShader(GL_VERTEX_SHADER, VertexSource);
-
-        const GLuint fragmentShader =
-            CompileShader(GL_FRAGMENT_SHADER, FragmentSource);
-
-        if (vertexShader == 0 || fragmentShader == 0)
+        std::pair<int,int> Measure(const std::string& text, int size)
         {
-            if (vertexShader != 0)
+            const std::string key = CacheKey(text, size);
+            const auto existing = measured.find(key);
+            if (existing != measured.end())
             {
-                gl.deleteShader(vertexShader);
+                return existing->second;
+            }
+            int width = 0;
+            int height = 0;
+            if (font != nullptr && SetSize(size))
+            {
+                TTF_GetStringSize(font, text.c_str(), 0, &width, &height);
+            }
+            if (measured.size() > 5000)
+            {
+                measured.clear();
+            }
+            measured.emplace(key, std::make_pair(width, height));
+            return {width, height};
+        }
+
+        CachedTexture* TextureFor(const std::string& text, int size)
+        {
+            const std::string key = CacheKey(text, size);
+            auto found = textures.find(key);
+            if (found != textures.end())
+            {
+                found->second.usedFrame = frame;
+                return &found->second;
+            }
+            if (font == nullptr || text.empty() || !SetSize(size))
+            {
+                return nullptr;
             }
 
-            if (fragmentShader != 0)
+            SDL_Surface* rendered = TTF_RenderText_Blended(font, text.c_str(), 0,
+                SDL_Color{255, 255, 255, 255});
+            if (rendered == nullptr)
             {
-                gl.deleteShader(fragmentShader);
+                return nullptr;
+            }
+            SDL_Surface* rgba = SDL_ConvertSurface(rendered, SDL_PIXELFORMAT_RGBA32);
+            SDL_DestroySurface(rendered);
+            if (rgba == nullptr || rgba->w <= 0 || rgba->h <= 0)
+            {
+                if (rgba != nullptr) SDL_DestroySurface(rgba);
+                return nullptr;
             }
 
-            return false;
+            if (textures.size() > 700)
+            {
+                for (auto it = textures.begin(); it != textures.end();)
+                {
+                    if (frame - it->second.usedFrame > 120)
+                    {
+                        glDeleteTextures(1, &it->second.texture);
+                        it = textures.erase(it);
+                    }
+                    else
+                    {
+                        ++it;
+                    }
+                }
+            }
+
+            CachedTexture cached;
+            cached.width = rgba->w;
+            cached.height = rgba->h;
+            cached.usedFrame = frame;
+            glGenTextures(1, &cached.texture);
+            glBindTexture(GL_TEXTURE_2D, cached.texture);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, 0x812F);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, 0x812F);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, rgba->w, rgba->h,
+                0, GL_RGBA, GL_UNSIGNED_BYTE, rgba->pixels);
+            SDL_DestroySurface(rgba);
+
+            auto [inserted, _] = textures.emplace(key, cached);
+            return &inserted->second;
         }
 
-        m_program = gl.createProgram();
-
-        if (m_program == 0)
+        CachedTexture* IconTexture(const std::string& id)
         {
-            gl.deleteShader(vertexShader);
-            gl.deleteShader(fragmentShader);
-            return false;
+            if (id.empty() || id.size() > 80 ||
+                id.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789_") !=
+                    std::string::npos)
+                return nullptr;
+            if (auto found = iconTextures.find(id); found != iconTextures.end())
+                return &found->second;
+            if (missingIcons.contains(id))
+                return nullptr;
+            const std::filesystem::path filename = id + ".bmp";
+            std::filesystem::path location =
+                std::filesystem::path("assets") / "icons" / filename;
+            std::error_code ec;
+            if (!std::filesystem::is_regular_file(location, ec))
+            {
+                const char* base = SDL_GetBasePath();
+                if (base)
+                    location = std::filesystem::path(base) /
+                        "assets" / "icons" / filename;
+            }
+            SDL_Surface* loaded = SDL_LoadBMP(location.string().c_str());
+            if (!loaded)
+            {
+                missingIcons[id] = true;
+                return nullptr;
+            }
+            SDL_Surface* rgba = SDL_ConvertSurface(loaded, SDL_PIXELFORMAT_RGBA32);
+            SDL_DestroySurface(loaded);
+            if (!rgba || rgba->w < 1 || rgba->h < 1)
+            {
+                if (rgba) SDL_DestroySurface(rgba);
+                missingIcons[id] = true;
+                return nullptr;
+            }
+            CachedTexture icon;
+            icon.width = rgba->w;
+            icon.height = rgba->h;
+            glGenTextures(1, &icon.texture);
+            glBindTexture(GL_TEXTURE_2D, icon.texture);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, 0x812F);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, 0x812F);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
+                rgba->w, rgba->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba->pixels);
+            SDL_DestroySurface(rgba);
+            auto [it, _] = iconTextures.emplace(id, icon);
+            return &it->second;
         }
 
-        gl.attachShader(m_program, vertexShader);
-        gl.attachShader(m_program, fragmentShader);
-        gl.linkProgram(m_program);
-
-        gl.deleteShader(vertexShader);
-        gl.deleteShader(fragmentShader);
-
-        GLint linked = GL_FALSE;
-
-        gl.getProgramiv(
-            m_program,
-            GL_LINK_STATUS,
-            &linked
-        );
-
-        if (linked != GL_TRUE)
+        void DrawQuad(const DrawCall& call, int textureMode, GLuint texture)
         {
-            std::array<char, 2048> log{};
+            const float left = call.x * 2.0f / static_cast<float>(viewportWidth) - 1.0f;
+            const float right = (call.x + call.width) * 2.0f / static_cast<float>(viewportWidth) - 1.0f;
+            const float top = 1.0f - call.y * 2.0f / static_cast<float>(viewportHeight);
+            const float bottom = 1.0f - (call.y + call.height) * 2.0f / static_cast<float>(viewportHeight);
+            const auto& c = call.color;
+            const std::array<float, 48> vertices{{
+                left, top, 0, 0, c.r, c.g, c.b, c.a,
+                right, top, 1, 0, c.r, c.g, c.b, c.a,
+                right, bottom, 1, 1, c.r, c.g, c.b, c.a,
+                left, top, 0, 0, c.r, c.g, c.b, c.a,
+                right, bottom, 1, 1, c.r, c.g, c.b, c.a,
+                left, bottom, 0, 1, c.r, c.g, c.b, c.a
+            }};
+            gl.uniform1i(useTextureLocation, textureMode);
+            glBindTexture(GL_TEXTURE_2D, textureMode != 0 ? texture : 0);
+            gl.bufferData(0x8892, static_cast<GLsizeiptr>(vertices.size() * sizeof(float)),
+                vertices.data(), 0x88E0);
+            gl.drawArrays(GL_TRIANGLES, 0, 6);
+        }
 
-            gl.getProgramInfoLog(
-                m_program,
-                static_cast<GLsizei>(log.size()),
-                nullptr,
-                log.data()
-            );
+        void Render()
+        {
+            if (calls.empty() || program == 0)
+            {
+                calls.clear();
+                return;
+            }
+            ++frame;
+            GLint oldProgram = 0;
+            GLint oldArray = 0;
+            GLint oldBuffer = 0;
+            GLint oldTexture = 0;
+            GLint oldActiveTexture = 0;
+            GLint oldUnpackAlignment = 4;
+            glGetIntegerv(0x8B8D, &oldProgram);
+            glGetIntegerv(0x85B5, &oldArray);
+            glGetIntegerv(0x8894, &oldBuffer);
+            glGetIntegerv(0x84E0, &oldActiveTexture);
+            gl.activeTexture(0x84C0);
+            glGetIntegerv(GL_TEXTURE_BINDING_2D, &oldTexture);
+            glGetIntegerv(GL_UNPACK_ALIGNMENT, &oldUnpackAlignment);
+            const GLboolean oldDepth = glIsEnabled(GL_DEPTH_TEST);
+            const GLboolean oldCull = glIsEnabled(GL_CULL_FACE);
+            const GLboolean oldBlend = glIsEnabled(GL_BLEND);
+            glDisable(GL_DEPTH_TEST);
+            glDisable(GL_CULL_FACE);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            gl.useProgram(program);
+            gl.uniform1i(textureLocation, 0);
+            gl.bindVertexArray(vertexArray);
+            gl.bindBuffer(0x8892, vertexBuffer);
+            for (const DrawCall& call : calls)
+            {
+                if (call.image)
+                {
+                    if (CachedTexture* texture = IconTexture(call.content))
+                        DrawQuad(call, 2, texture->texture);
+                }
+                else if (call.text)
+                {
+                    if (CachedTexture* texture = TextureFor(call.content, call.fontSize))
+                    {
+                        DrawCall adjusted = call;
+                        adjusted.width = static_cast<float>(texture->width);
+                        adjusted.height = static_cast<float>(texture->height);
+                        DrawQuad(adjusted, 1, texture->texture);
+                    }
+                }
+                else if (call.width > 0.0f && call.height > 0.0f)
+                {
+                    DrawQuad(call, 0, 0);
+                }
+            }
+            glPixelStorei(GL_UNPACK_ALIGNMENT, oldUnpackAlignment);
+            glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(oldTexture));
+            gl.activeTexture(static_cast<GLenum>(oldActiveTexture));
+            gl.bindBuffer(0x8892, static_cast<GLuint>(oldBuffer));
+            gl.bindVertexArray(static_cast<GLuint>(oldArray));
+            gl.useProgram(static_cast<GLuint>(oldProgram));
+            if (oldDepth) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+            if (oldCull) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
+            if (oldBlend) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+            calls.clear();
+        }
+    };
 
-            std::cerr
-                << "UI shader linking failed:\n"
-                << log.data() << '\n';
+    UIRenderer::UIRenderer() : m_impl(std::make_unique<Impl>()) {}
+    UIRenderer::~UIRenderer() { Shutdown(); }
 
+    bool UIRenderer::Initialize()
+    {
+        if (m_impl->font != nullptr)
+        {
+            return true;
+        }
+        if (!TTF_Init())
+        {
+            std::cerr << "SDL3_ttf initialization failed: " << SDL_GetError() << '\n';
+            return false;
+        }
+        m_impl->ownsTtf = true;
+        const auto fontPath = LocateFont();
+        if (fontPath.empty())
+        {
+            std::cerr << "No supported system UI font installed. Install Segoe UI, DejaVu Sans, or Liberation Sans.\n";
             Shutdown();
             return false;
         }
-
-        m_viewportUniform = gl.getUniformLocation(
-            m_program,
-            "uViewport"
-        );
-
-        m_colorUniform = gl.getUniformLocation(
-            m_program,
-            "uColor"
-        );
-
-        gl.genVertexArrays(1, &m_vertexArray);
-        gl.genBuffers(1, &m_vertexBuffer);
-
-        if (m_vertexArray == 0 || m_vertexBuffer == 0)
+        m_impl->font = TTF_OpenFont(fontPath.string().c_str(), 14.0f);
+        if (m_impl->font == nullptr)
         {
+            std::cerr << "Unable to load system font: " << fontPath << " : " << SDL_GetError() << '\n';
             Shutdown();
             return false;
         }
-
-        gl.bindVertexArray(m_vertexArray);
-        gl.bindBuffer(GL_ARRAY_BUFFER, m_vertexBuffer);
-
-        gl.enableVertexAttribArray(0);
-
-        gl.vertexAttribPointer(
-            0,
-            2,
-            GL_FLOAT,
-            GL_FALSE,
-            sizeof(float) * 2,
-            nullptr
-        );
-
-        gl.bindVertexArray(0);
-        gl.bindBuffer(GL_ARRAY_BUFFER, 0);
-
-        m_initialized = true;
-
-        std::cout << "UI renderer initialized.\n";
-
+        m_impl->currentFontSize = 14;
+        if (!m_impl->LoadGL() || !m_impl->SetupShader())
+        {
+            std::cerr << "UI OpenGL shader setup failed.\n";
+            Shutdown();
+            return false;
+        }
+        std::cout << "UI font loaded: " << fontPath.filename().string() << " (anti-aliased system font)\n";
         return true;
     }
 
     void UIRenderer::Shutdown()
     {
-        if (gl.deleteBuffers && m_vertexBuffer != 0)
+        if (!m_impl)
         {
-            gl.deleteBuffers(1, &m_vertexBuffer);
-            m_vertexBuffer = 0;
+            return;
         }
-
-        if (gl.deleteVertexArrays && m_vertexArray != 0)
+        for (const auto& [key, cached] : m_impl->textures)
         {
-            gl.deleteVertexArrays(1, &m_vertexArray);
-            m_vertexArray = 0;
+            (void)key;
+            if (cached.texture != 0) glDeleteTextures(1, &cached.texture);
         }
-
-        if (gl.deleteProgram && m_program != 0)
+        m_impl->textures.clear();
+        for (const auto& [id, cached] : m_impl->iconTextures)
         {
-            gl.deleteProgram(m_program);
-            m_program = 0;
+            (void)id;
+            if (cached.texture != 0) glDeleteTextures(1, &cached.texture);
         }
-
-        m_initialized = false;
+        m_impl->iconTextures.clear();
+        m_impl->missingIcons.clear();
+        m_impl->measured.clear();
+        if (m_impl->vertexBuffer != 0) m_impl->gl.deleteBuffers(1, &m_impl->vertexBuffer);
+        if (m_impl->vertexArray != 0) m_impl->gl.deleteVertexArrays(1, &m_impl->vertexArray);
+        if (m_impl->program != 0) m_impl->gl.deleteProgram(m_impl->program);
+        m_impl->vertexBuffer = 0;
+        m_impl->vertexArray = 0;
+        m_impl->program = 0;
+        if (m_impl->font != nullptr) TTF_CloseFont(m_impl->font);
+        m_impl->font = nullptr;
+        m_impl->currentFontSize = 0;
+        if (m_impl->ownsTtf) TTF_Quit();
+        m_impl->ownsTtf = false;
     }
 
     void UIRenderer::BeginFrame(int width, int height)
     {
-        if (!m_initialized)
-        {
-            return;
-        }
-
-        m_viewportWidth = std::max(width, 1);
-        m_viewportHeight = std::max(height, 1);
-
-        glDisable(GL_DEPTH_TEST);
-        glDisable(GL_CULL_FACE);
-
-        glEnable(GL_BLEND);
-        glBlendFunc(
-            GL_SRC_ALPHA,
-            GL_ONE_MINUS_SRC_ALPHA
-        );
-
-        gl.useProgram(m_program);
-        gl.bindVertexArray(m_vertexArray);
-
-        gl.uniform2f(
-            m_viewportUniform,
-            static_cast<float>(m_viewportWidth),
-            static_cast<float>(m_viewportHeight)
-        );
+        m_impl->viewportWidth = std::max(1, width);
+        m_impl->viewportHeight = std::max(1, height);
+        m_impl->calls.clear();
     }
 
     void UIRenderer::EndFrame()
     {
-        if (!m_initialized)
+        m_impl->Render();
+    }
+
+    void UIRenderer::DrawIcon(std::string_view iconId, float x, float y,
+        float width, float height)
+    {
+        if (iconId.empty() || width <= 0.0f || height <= 0.0f)
+            return;
+        Impl::DrawCall call;
+        call.image = true;
+        call.content = std::string(iconId);
+        call.x = x;
+        call.y = y;
+        call.width = width;
+        call.height = height;
+        call.color = UIColor{1.0f, 1.0f, 1.0f, 1.0f};
+        m_impl->calls.push_back(std::move(call));
+    }
+
+    void UIRenderer::DrawRectangle(float x, float y, float width, float height, UIColor color)
+    {
+        if (width <= 0.0f || height <= 0.0f)
         {
             return;
         }
-
-        gl.bindVertexArray(0);
-        gl.bindBuffer(GL_ARRAY_BUFFER, 0);
-        gl.useProgram(0);
-
-        glDisable(GL_BLEND);
-
-        glEnable(GL_DEPTH_TEST);
-        glEnable(GL_CULL_FACE);
+        Impl::DrawCall call;
+        call.x = x;
+        call.y = y;
+        call.width = width;
+        call.height = height;
+        call.color = color;
+        m_impl->calls.push_back(std::move(call));
     }
 
-    void UIRenderer::DrawQuad(
-        float x,
-        float y,
-        float width,
-        float height,
-        const UIColor& color)
+    void UIRenderer::DrawText(std::string_view text, float x, float y, float scale, UIColor color)
     {
-        if (!m_initialized ||
-            width <= 0.0f ||
-            height <= 0.0f)
+        if (text.empty())
         {
             return;
         }
-
-        const float vertices[] =
-        {
-            x,         y,
-            x + width, y,
-            x + width, y + height,
-
-            x,         y,
-            x + width, y + height,
-            x,         y + height
-        };
-
-        gl.uniform4f(
-            m_colorUniform,
-            color.r,
-            color.g,
-            color.b,
-            color.a
-        );
-
-        gl.bindBuffer(GL_ARRAY_BUFFER, m_vertexBuffer);
-
-        gl.bufferData(
-            GL_ARRAY_BUFFER,
-            static_cast<std::ptrdiff_t>(sizeof(vertices)),
-            vertices,
-            GL_STREAM_DRAW
-        );
-
-        glDrawArrays(GL_TRIANGLES, 0, 6);
+        Impl::DrawCall call;
+        call.text = true;
+        call.content = std::string(text);
+        call.x = x;
+        call.y = y;
+        call.fontSize = FontPixels(scale);
+        call.color = color;
+        m_impl->calls.push_back(std::move(call));
     }
 
-    void UIRenderer::DrawRectangle(
-        float x,
-        float y,
-        float width,
-        float height,
-        const UIColor& color)
+    float UIRenderer::MeasureText(std::string_view text, float scale)
     {
-        DrawQuad(x, y, width, height, color);
-    }
-
-    void UIRenderer::DrawGlyph(
-        char character,
-        float x,
-        float y,
-        float scale,
-        const UIColor& color)
-    {
-        const Glyph glyph = GetGlyph(character);
-
-        for (int row = 0; row < 7; ++row)
+        if (text.empty())
         {
-            for (int column = 0; column < 5; ++column)
-            {
-                const unsigned char mask =
-                    static_cast<unsigned char>(
-                        1u << (4 - column)
-                    );
-
-                if ((glyph[row] & mask) == 0)
-                {
-                    continue;
-                }
-
-                DrawQuad(
-                    x + static_cast<float>(column) * scale,
-                    y + static_cast<float>(row) * scale,
-                    scale,
-                    scale,
-                    color
-                );
-            }
+            return 0.0f;
         }
+        return static_cast<float>(m_impl->Measure(std::string(text), FontPixels(scale)).first);
     }
 
-    void UIRenderer::DrawText(
-        std::string_view text,
-        float x,
-        float y,
-        float scale,
-        const UIColor& color)
+    float UIRenderer::TextHeight(float scale) const
     {
-        if (!m_initialized || scale <= 0.0f)
-        {
-            return;
-        }
-
-        const float startX = x;
-
-        for (const char character : text)
-        {
-            if (character == '\n')
-            {
-                x = startX;
-                y += scale * 9.0f;
-                continue;
-            }
-
-            DrawGlyph(
-                character,
-                x,
-                y,
-                scale,
-                color
-            );
-
-            x += scale * 6.0f;
-        }
-    }
-
-    float UIRenderer::MeasureText(
-        std::string_view text,
-        float scale) const
-    {
-        float currentWidth = 0.0f;
-        float maximumWidth = 0.0f;
-
-        for (const char character : text)
-        {
-            if (character == '\n')
-            {
-                maximumWidth = std::max(
-                    maximumWidth,
-                    currentWidth
-                );
-
-                currentWidth = 0.0f;
-                continue;
-            }
-
-            currentWidth += scale * 6.0f;
-        }
-
-        return std::max(maximumWidth, currentWidth);
-    }
-
-    bool UIRenderer::IsInitialized() const
-    {
-        return m_initialized;
+        return static_cast<float>(FontPixels(scale));
     }
 }

@@ -558,6 +558,99 @@ namespace industrial_frontier
         m_initialized = true;
     }
 
+    void PlayerController::SetOutcropColliders(
+        const std::vector<OutcropCollisionShape>* shapes)
+    {
+        m_outcropColliders = shapes;
+    }
+
+    void PlayerController::SetTreeColliders(const std::vector<ForestTree>* trees)
+    {
+        m_treeColliders = trees;
+    }
+
+    void PlayerController::SetStructureColliders(
+        const std::vector<StructureCollider>* colliders)
+    {
+        m_structureColliders = colliders;
+    }
+
+    bool PlayerController::IsStructureBlocking(
+        float x, float y, float z, float padding) const
+    {
+        return StructureBlocksPoint(m_structureColliders,x,y,z,padding);
+    }
+
+    bool PlayerController::IsTreeBlocking(float x, float y, float z, float padding) const
+    {
+        if (!m_treeColliders)
+            return false;
+        for (const auto& tree : *m_treeColliders)
+        {
+            if (y < tree.y - 0.28f || y > tree.y + tree.height * 0.74f)
+                continue;
+            const float width = tree.crownRadius *
+                (tree.species == TreeSpecies::Pine ? 0.18f : 0.23f) * 1.1f + padding;
+            const float dx = x - tree.x;
+            const float dz = z - tree.z;
+            if (dx * dx + dz * dz < width * width)
+                return true;
+        }
+        return false;
+    }
+
+    bool PlayerController::IsCollisionSolid(
+        const VoxelTerrain& terrain, float x, float y, float z) const
+    {
+        if (terrain.SampleDensity(x, y, z) > CollisionSkin ||
+            IsTreeBlocking(x, y, z, 0.06f) ||
+            IsStructureBlocking(x, y, z, 0.06f))
+        {
+            return true;
+        }
+        if (m_outcropColliders)
+        {
+            for (const OutcropCollisionShape& shape : *m_outcropColliders)
+            {
+                if (IsInsideOutcrop(shape, x, y, z, 0.06f))
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    bool PlayerController::IsOutcropBlocking(float x, float y, float z) const
+    {
+        if (m_treeColliders)
+        {
+            for (const CollisionRing& ring : CollisionRings)
+            {
+                if (IsTreeBlocking(x, y + ring.height, z,
+                    m_collisionRadius * ring.radiusFactor + 0.06f))
+                    return true;
+            }
+        }
+        if (!m_outcropColliders)
+        {
+            return false;
+        }
+        for (const OutcropCollisionShape& shape : *m_outcropColliders)
+        {
+            for (const CollisionRing& ring : CollisionRings)
+            {
+                const float sampleY = y + ring.height;
+                const float radius = m_collisionRadius * ring.radiusFactor;
+                if (IsInsideOutcrop(shape, x, sampleY, z, radius + 0.06f))
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     bool PlayerController::IsCapsuleClear(
         float x,
         float y,
@@ -572,11 +665,11 @@ namespace industrial_frontier
             const float sampleY = y + ring.height;
             const float radius = m_collisionRadius * ring.radiusFactor;
 
-            if (terrain.SampleDensity(x, sampleY, z) > CollisionSkin ||
-                terrain.SampleDensity(x + radius, sampleY, z) > CollisionSkin ||
-                terrain.SampleDensity(x - radius, sampleY, z) > CollisionSkin ||
-                terrain.SampleDensity(x, sampleY, z + radius) > CollisionSkin ||
-                terrain.SampleDensity(x, sampleY, z - radius) > CollisionSkin)
+            if (IsCollisionSolid(terrain, x, sampleY, z)  ||
+                IsCollisionSolid(terrain, x + radius, sampleY, z)  ||
+                IsCollisionSolid(terrain, x - radius, sampleY, z)  ||
+                IsCollisionSolid(terrain, x, sampleY, z + radius)  ||
+                IsCollisionSolid(terrain, x, sampleY, z - radius) )
             {
                 return false;
             }
@@ -585,10 +678,10 @@ namespace industrial_frontier
             {
                 const float diagonal = radius * 0.70710678118f;
 
-                if (terrain.SampleDensity(x + diagonal, sampleY, z + diagonal) > CollisionSkin ||
-                    terrain.SampleDensity(x + diagonal, sampleY, z - diagonal) > CollisionSkin ||
-                    terrain.SampleDensity(x - diagonal, sampleY, z + diagonal) > CollisionSkin ||
-                    terrain.SampleDensity(x - diagonal, sampleY, z - diagonal) > CollisionSkin)
+                if (IsCollisionSolid(terrain, x + diagonal, sampleY, z + diagonal)  ||
+                    IsCollisionSolid(terrain, x + diagonal, sampleY, z - diagonal)  ||
+                    IsCollisionSolid(terrain, x - diagonal, sampleY, z + diagonal)  ||
+                    IsCollisionSolid(terrain, x - diagonal, sampleY, z - diagonal) )
                 {
                     return false;
                 }
@@ -610,6 +703,11 @@ namespace industrial_frontier
 
         const float candidateX = m_x + deltaX;
         const float candidateZ = m_z + deltaZ;
+
+        if (IsOutcropBlocking(candidateX, m_y, candidateZ))
+        {
+            return false;
+        }
 
         if (IsCapsuleClear(candidateX, m_y, candidateZ, terrain))
         {

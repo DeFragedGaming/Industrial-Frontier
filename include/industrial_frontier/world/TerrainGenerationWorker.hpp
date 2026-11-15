@@ -37,6 +37,8 @@ namespace industrial_frontier
         void RegenerateChunk(int chunkX, int chunkZ);
         bool DigSphere(float x, float y, float z, float radius);
         bool ReplaceEdits(const std::vector<VoxelEdit>& edits);
+        bool DepleteDeposit(std::uint64_t id);
+        bool ReplaceDepletedDeposits(const std::vector<std::uint64_t>& ids);
         float SampleDensity(float x, float y, float z) const;
         std::shared_ptr<const VoxelTerrain> GetVoxelTerrain() const;
         bool TryGetCompletedChunk(TerrainChunk& chunk);

@@ -1,8 +1,14 @@
 #pragma once
 
 #include "industrial_frontier/world/VoxelTerrain.hpp"
+#include "industrial_frontier/resources/PlayerInventory.hpp"
+#include "industrial_frontier/resources/Campfire.hpp"
+#include "industrial_frontier/resources/EarlyMetallurgy.hpp"
+#include "industrial_frontier/resources/BuildStructures.hpp"
+#include "industrial_frontier/ui/ItemLayout.hpp"
 
 #include <filesystem>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -18,6 +24,25 @@ namespace industrial_frontier
         float yaw = -90.0f;
         float pitch = 0.0f;
         std::vector<VoxelEdit> edits;
+        std::vector<std::uint64_t> depletedDeposits;
+        std::vector<std::uint64_t> felledTrees;
+        std::vector<std::uint64_t> strippedTrees;
+        std::vector<std::uint64_t> collectedPebbles;
+        std::vector<CampfireState> campfires;
+        std::vector<ClayFurnaceState> furnaces;
+        std::vector<BuildStructure> structures;
+        float moldCoolingSeconds = 0.0f;
+        InventoryState inventory;
+        InventoryState storage = []
+        {
+            InventoryState state;
+            state.carryCapacityBonusKg = 900.0f;
+            return state;
+        }();
+        ItemLayout::Grid bagSlots{};
+        ItemLayout::Grid storageSlots{};
+        ItemLayout::Bar quickbar{};
+        std::size_t selectedQuickbar = 0;
     };
 
     struct SaveSlotInfo

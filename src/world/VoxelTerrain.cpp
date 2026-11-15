@@ -1,4 +1,5 @@
 #include "industrial_frontier/world/VoxelTerrain.hpp"
+#include "industrial_frontier/resources/GeologyGenerator.hpp"
 
 #include <algorithm>
 #include <array>
@@ -6,6 +7,9 @@
 #include <bit>
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
+#include <iostream>
+#include <memory>
 #include <limits>
 #include <mutex>
 #include <utility>
@@ -554,6 +558,31 @@ namespace industrial_frontier
           m_voxelSpacing(std::max(voxelSpacing, 0.1f)),
           m_generationId(NextGenerationId.fetch_add(1, std::memory_order_relaxed))
     {
+        auto geology = std::make_unique<GeologyGenerator>(settings.seed,
+            &m_generator, this);
+        std::string error;
+        for (const std::filesystem::path& path : {
+            std::filesystem::path("assets/data/minerals.tsv"),
+            std::filesystem::path("../assets/data/minerals.tsv"),
+            std::filesystem::path("../../assets/data/minerals.tsv")})
+        {
+            if (geology->LoadCatalog(path, error))
+            {
+                m_geology = std::move(geology);
+                break;
+            }
+        }
+        if (!m_geology)
+        {
+            std::cerr << "Geology resource catalog unavailable: " << error << '\n';
+        }
+    }
+
+    VoxelTerrain::~VoxelTerrain() = default;
+
+    const GeologyGenerator* VoxelTerrain::GetGeology() const
+    {
+        return m_geology.get();
     }
 
     float VoxelTerrain::Clamp01(float value)
@@ -629,7 +658,7 @@ namespace industrial_frontier
             }
         }
 
-        return density;
+        return std::max(density, BedrockSurfaceY - y);
     }
 
     float VoxelTerrain::GetSurfaceHeight(float x, float z) const
@@ -647,6 +676,11 @@ namespace industrial_frontier
     TerrainMaterial VoxelTerrain::GetMaterialAt(
         float x, float y, float z, float normalY) const
     {
+        if (y <= BedrockSurfaceY + 0.8f)
+        {
+            return TerrainMaterial::Bedrock;
+        }
+
         const float originalHeight = m_generator.GetHeight(x, z);
         const float surfaceHeight = GetSurfaceHeight(x, z);
         const float depth = surfaceHeight - y;
@@ -737,6 +771,12 @@ namespace industrial_frontier
             return false;
         }
 
+        if (!edit.addMaterial &&
+            edit.y + edit.radius * edit.strength <= BedrockSurfaceY)
+        {
+            return false;
+        }
+
         std::unique_lock<std::shared_mutex> lock(m_mutex);
         m_edits.push_back(edit);
         ++m_revision;
@@ -765,6 +805,48 @@ namespace industrial_frontier
     {
         std::shared_lock<std::shared_mutex> lock(m_mutex);
         return m_edits;
+    }
+
+    bool VoxelTerrain::DepleteDeposit(std::uint64_t depositId)
+    {
+        if (depositId == 0)
+        {
+            return false;
+        }
+        std::unique_lock<std::shared_mutex> lock(m_mutex);
+        if (!m_depletedDeposits.insert(depositId).second)
+        {
+            return false;
+        }
+        ++m_revision;
+        return true;
+    }
+
+    bool VoxelTerrain::IsDepositDepleted(std::uint64_t depositId) const
+    {
+        std::shared_lock<std::shared_mutex> lock(m_mutex);
+        return m_depletedDeposits.contains(depositId);
+    }
+
+    std::vector<std::uint64_t> VoxelTerrain::GetDepletedDeposits() const
+    {
+        std::shared_lock<std::shared_mutex> lock(m_mutex);
+        return {m_depletedDeposits.begin(), m_depletedDeposits.end()};
+    }
+
+    void VoxelTerrain::SetDepletedDeposits(
+        const std::vector<std::uint64_t>& ids)
+    {
+        std::unique_lock<std::shared_mutex> lock(m_mutex);
+        m_depletedDeposits.clear();
+        for (const std::uint64_t id : ids)
+        {
+            if (id != 0)
+            {
+                m_depletedDeposits.insert(id);
+            }
+        }
+        ++m_revision;
     }
 
     std::vector<CaveEntrance> VoxelTerrain::FindCaveEntrances(

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "industrial_frontier/save/SaveManager.hpp"
+#include "industrial_frontier/ui/UIRenderer.hpp"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_opengl.h>
@@ -40,6 +41,7 @@ namespace industrial_frontier
     {
     public:
         bool Initialize();
+        void SetTextRenderer(UIRenderer* renderer);
         void Shutdown();
         void OpenSave();
         void OpenLoad();
@@ -71,6 +73,16 @@ namespace industrial_frontier
         GLuint m_vertexArray = 0;
         GLuint m_vertexBuffer = 0;
         std::vector<float> m_vertices;
+        struct QueuedText
+        {
+            float x = 0.0f;
+            float y = 0.0f;
+            float scale = 1.0f;
+            UIColor color;
+            std::string text;
+        };
+        std::vector<QueuedText> m_queuedText;
+        UIRenderer* m_textRenderer = nullptr;
 
         bool SetupGL();
         void AddRect(int width, int height, float x, float y,

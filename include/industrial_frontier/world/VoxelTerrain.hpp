@@ -4,18 +4,22 @@
 #include "industrial_frontier/world/TerrainGenerator.hpp"
 
 #include <cstdint>
+#include <memory>
 #include <shared_mutex>
+#include <unordered_set>
 #include <vector>
 
 namespace industrial_frontier
 {
+    class GeologyGenerator;
     enum class TerrainMaterial
     {
         None,
         Grass,
         DirtClay,
         Stone,
-        Snow
+        Snow,
+        Bedrock
     };
 
     struct VoxelEdit
@@ -51,11 +55,17 @@ namespace industrial_frontier
     class VoxelTerrain
     {
     public:
+        static constexpr float BedrockSurfaceY = -80.0f;
+
         explicit VoxelTerrain(
             const TerrainSettings& settings = TerrainSettings{},
             float chunkSize = 32.0f,
             float voxelSpacing = 1.0f
         );
+
+        ~VoxelTerrain();
+
+        const GeologyGenerator* GetGeology() const;
 
         VoxelTerrain(const VoxelTerrain&) = delete;
         VoxelTerrain& operator=(const VoxelTerrain&) = delete;
@@ -100,6 +110,10 @@ namespace industrial_frontier
         ) const;
 
         std::vector<VoxelEdit> GetEdits() const;
+        bool DepleteDeposit(std::uint64_t depositId);
+        bool IsDepositDepleted(std::uint64_t depositId) const;
+        std::vector<std::uint64_t> GetDepletedDeposits() const;
+        void SetDepletedDeposits(const std::vector<std::uint64_t>& ids);
 
         std::vector<CaveEntrance> FindCaveEntrances(
             float minX,
@@ -123,6 +137,7 @@ namespace industrial_frontier
 
     private:
         TerrainGenerator m_generator;
+        std::unique_ptr<GeologyGenerator> m_geology;
 
         float m_chunkSize = 32.0f;
         float m_voxelSpacing = 1.0f;
@@ -130,6 +145,7 @@ namespace industrial_frontier
         mutable std::shared_mutex m_mutex;
 
         std::vector<VoxelEdit> m_edits;
+        std::unordered_set<std::uint64_t> m_depletedDeposits;
 
         std::uint64_t m_revision = 0;
         std::uint64_t m_generationId = 0;

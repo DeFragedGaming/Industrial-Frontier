@@ -1,14 +1,9 @@
 
 #pragma once
 
-#include <cstdint>
+#include <memory>
+#include <string>
 #include <string_view>
-
-// Windows headers can define DrawText as DrawTextA or DrawTextW.
-// Remove that macro so our OpenGL UI method retains its name.
-#ifdef DrawText
-#undef DrawText
-#endif
 
 namespace industrial_frontier
 {
@@ -23,7 +18,7 @@ namespace industrial_frontier
     class UIRenderer
     {
     public:
-        UIRenderer() = default;
+        UIRenderer();
         ~UIRenderer();
 
         UIRenderer(const UIRenderer&) = delete;
@@ -31,60 +26,17 @@ namespace industrial_frontier
 
         bool Initialize();
         void Shutdown();
-
         void BeginFrame(int width, int height);
         void EndFrame();
-
-        void DrawRectangle(
-            float x,
-            float y,
-            float width,
-            float height,
-            const UIColor& color
-        );
-
-        void DrawText(
-            std::string_view text,
-            float x,
-            float y,
-            float scale,
-            const UIColor& color
-        );
-
-        float MeasureText(
-            std::string_view text,
-            float scale
-        ) const;
-
-        bool IsInitialized() const;
+        void DrawRectangle(float x, float y, float width, float height, UIColor color);
+        void DrawIcon(std::string_view iconId, float x, float y,
+            float width, float height);
+        void DrawText(std::string_view text, float x, float y, float scale, UIColor color);
+        float MeasureText(std::string_view text, float scale);
+        float TextHeight(float scale) const;
 
     private:
-        void DrawGlyph(
-            char character,
-            float x,
-            float y,
-            float scale,
-            const UIColor& color
-        );
-
-        void DrawQuad(
-            float x,
-            float y,
-            float width,
-            float height,
-            const UIColor& color
-        );
-
-        unsigned int m_program = 0;
-        unsigned int m_vertexArray = 0;
-        unsigned int m_vertexBuffer = 0;
-
-        int m_viewportWidth = 1;
-        int m_viewportHeight = 1;
-
-        int m_viewportUniform = -1;
-        int m_colorUniform = -1;
-
-        bool m_initialized = false;
+        struct Impl;
+        std::unique_ptr<Impl> m_impl;
     };
 }

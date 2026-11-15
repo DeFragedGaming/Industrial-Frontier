@@ -1,0 +1,94 @@
+id	name	kind	formula	commodity	target_elements	host_geologies	depth_min_m	depth_max_m	spawn_weight	hardness_min_mohs	hardness_max_mohs	processing_route_id	processing_overview	notes
+hematite	Hematite	mineral	Fe2O3	Iron	Fe	sedimentary,hydrothermal,metamorphic	0	130	85	5.5	6.5	iron_oxide	Crush, upgrade, then ironmaking	Iron(III) oxide; recovery depends on mineral liberation and processing route
+magnetite	Magnetite	mineral	Fe3O4	Iron	Fe	igneous,metamorphic,sedimentary	0	135	85	5.5	6.5	iron_magnetic	Crush, magnetic separation, then ironmaking	Iron oxide; magnetic concentration often suitable
+goethite	Goethite	mineral	FeO(OH)	Iron	Fe	weathered,sedimentary	0	90	80	5.0	5.5	iron_oxide	Beneficiation and ironmaking	Iron oxyhydroxide; properties vary strongly with ore texture
+siderite	Siderite	mineral	FeCO3	Iron	Fe	sedimentary,hydrothermal	10	140	50	3.5	4.5	iron_carbonate	Optional roasting, upgrading, ironmaking	Iron carbonate; pretreatment route varies by deposit
+limonite	Limonite	rock		Iron	Fe	weathered,sedimentary	0	70	50			iron_oxide	Beneficiation and ironmaking	Mixture of hydrous iron oxides rather than a single mineral species
+chalcopyrite	Chalcopyrite	mineral	CuFeS2	Copper	Cu	hydrothermal,weathered,igneous	0	125	85	3.5	4.0	copper_sulfide	Copper upgrading, smelting or leaching depending on mineral	Major copper iron sulfide
+bornite	Bornite	mineral	Cu5FeS4	Copper	Cu	hydrothermal,weathered,igneous	0	125	60	3.0	3.0	copper_sulfide	Copper upgrading, smelting or leaching depending on mineral	Copper iron sulfide often associated with chalcopyrite
+chalcocite	Chalcocite	mineral	Cu2S	Copper	Cu	hydrothermal,weathered,igneous	0	125	55	2.5	3.0	copper_sulfide	Copper upgrading, smelting or leaching depending on mineral	Copper sulfide
+malachite	Malachite	mineral	Cu2CO3(OH)2	Copper	Cu	hydrothermal,weathered,igneous	0	125	60	3.5	4.0	copper_oxide	Copper upgrading, smelting or leaching depending on mineral	Secondary copper carbonate hydroxide
+azurite	Azurite	mineral	Cu3(CO3)2(OH)2	Copper	Cu	hydrothermal,weathered,igneous	0	125	40	3.5	4.0	copper_oxide	Copper upgrading, smelting or leaching depending on mineral	Secondary copper carbonate hydroxide
+cuprite	Cuprite	mineral	Cu2O	Copper	Cu	hydrothermal,weathered,igneous	0	125	40	3.5	4.0	copper_oxide	Copper upgrading, smelting or leaching depending on mineral	Copper oxide
+covellite	Covellite	mineral	CuS	Copper	Cu	hydrothermal,weathered,igneous	0	125	35	1.5	2.0	copper_sulfide	Copper upgrading, smelting or leaching depending on mineral	Copper sulfide
+enargite	Enargite	mineral	Cu3AsS4	Copper	Cu	hydrothermal,weathered,igneous	0	125	20	3.0	3.0	copper_sulfide	Copper upgrading, smelting or leaching depending on mineral	Arsenic-bearing copper sulfide; requires impurity control
+chrysocolla	Chrysocolla	mineral		Copper	Cu	hydrothermal,weathered,igneous	0	125	35	2.0	4.0	copper_oxide	Copper upgrading, smelting or leaching depending on mineral	Variable hydrated copper silicate; no single fixed formula
+bauxite	Bauxite	rock		Aluminum	Al	weathered,sedimentary	0	65	75			alumina	Bayer process to alumina; aluminum smelting	Rock containing aluminum hydroxides, not a single mineral
+gibbsite	Gibbsite	mineral	Al(OH)3	Aluminum	Al	weathered,sedimentary	0	75	70	2.5	3.5	alumina	Alumina production then electrolysis	
+boehmite	Boehmite	mineral	AlO(OH)	Aluminum	Al	weathered,sedimentary	0	80	50	3.0	3.5	alumina	Alumina production then electrolysis	
+diaspore	Diaspore	mineral	AlO(OH)	Aluminum	Al	metamorphic,weathered	5	110	40	6.5	7.0	alumina	Alumina production then electrolysis	
+galena	Galena	mineral	PbS	Lead	Pb	hydrothermal	0	160	85	2.5	2.75	lead_sulfide	Lead sulfide	Common lead sulfide
+cerussite	Cerussite	mineral	PbCO3	Lead	Pb	weathered	0	130	40	3.0	3.5	lead_oxide	Lead oxide	Lead carbonate
+anglesite	Anglesite	mineral	PbSO4	Lead	Pb	weathered	0	130	25	2.5	3.0	lead_oxide	Lead oxide	Lead sulfate
+sphalerite	Sphalerite	mineral	ZnS	Zinc	Zn	hydrothermal	0	160	85	3.5	4.0	zinc_sulfide	Zinc sulfide	Common zinc sulfide
+smithsonite	Smithsonite	mineral	ZnCO3	Zinc	Zn	weathered	0	130	40	4.0	4.5	zinc_oxide	Zinc oxide	Zinc carbonate
+hemimorphite	Hemimorphite	mineral	Zn4Si2O7(OH)2·H2O	Zinc	Zn	weathered	0	130	35	4.5	5.0	zinc_oxide	Zinc oxide	Hydrated zinc silicate
+cassiterite	Cassiterite	mineral	SnO2	Tin	Sn	hydrothermal,placer	0	130	75	6.0	7.0	tin_oxide	Tin oxide	Major tin oxide
+stannite	Stannite	mineral	Cu2FeSnS4	Tin	Sn	hydrothermal	0	160	25	4.0	4.0	tin_sulfide	Tin sulfide	Tin-bearing sulfide
+pentlandite	Pentlandite	mineral	(Fe,Ni)9S8	Nickel	Ni	igneous	0	160	65	3.5	4.0	nickel_sulfide	Nickel sulfide	Nickel iron sulfide; composition varies
+millerite	Millerite	mineral	NiS	Nickel	Ni	hydrothermal	0	160	30	3.0	3.5	nickel_sulfide	Nickel sulfide	Nickel sulfide
+cobaltite	Cobaltite	mineral	CoAsS	Cobalt	Co	hydrothermal	0	160	45	5.5	6.0	cobalt_arsenide	Cobalt arsenide	Cobalt-bearing arsenic sulfide
+skutterudite	Skutterudite	mineral	CoAs3	Cobalt	Co	hydrothermal	0	160	25	5.5	6.0	cobalt_arsenide	Cobalt arsenide	Cobalt arsenide; composition may vary
+chromite	Chromite	mineral	FeCr2O4	Chromium	Cr	igneous	0	160	60	5.5	5.5	chromium_oxide	Chromium oxide	Chromium ore
+pyrolusite	Pyrolusite	mineral	MnO2	Manganese	Mn	sedimentary,weathered	0	130	70	2.0	2.5	manganese_oxide	Manganese oxide	Manganese dioxide
+rhodochrosite	Rhodochrosite	mineral	MnCO3	Manganese	Mn	hydrothermal	0	160	30	3.5	4.0	manganese_carbonate	Manganese carbonate	Manganese carbonate
+manganite	Manganite	mineral	MnO(OH)	Manganese	Mn	weathered	0	130	30	4.0	4.0	manganese_oxide	Manganese oxide	Manganese oxyhydroxide
+scheelite	Scheelite	mineral	CaWO4	Tungsten	W	hydrothermal,metamorphic	0	130	55	4.5	5.0	tungsten_ore	Tungsten ore	Calcium tungstate
+ferberite	Ferberite	mineral	FeWO4	Tungsten	W	hydrothermal	0	160	40	4.0	4.5	tungsten_ore	Tungsten ore	Iron tungstate
+hubnerite	Hübnerite	mineral	MnWO4	Tungsten	W	hydrothermal	0	160	25	4.0	4.5	tungsten_ore	Tungsten ore	Manganese tungstate
+molybdenite	Molybdenite	mineral	MoS2	Molybdenum	Mo	hydrothermal	0	160	70	1.0	1.5	moly_sulfide	Moly sulfide	Molybdenum disulfide
+powellite	Powellite	mineral	CaMoO4	Molybdenum	Mo	hydrothermal	0	160	25	3.5	4.0	moly_oxide	Moly oxide	Calcium molybdate
+spodumene	Spodumene	mineral	LiAlSi2O6	Lithium	Li	pegmatite	0	160	65	6.5	7.0	lithium_silicate	Lithium silicate	Lithium pyroxene
+petalite	Petalite	mineral	LiAlSi4O10	Lithium	Li	pegmatite	0	160	35	6.0	6.5	lithium_silicate	Lithium silicate	Lithium silicate
+amblygonite	Amblygonite	mineral	(Li,Na)Al(PO4)(F,OH)	Lithium	Li	pegmatite	0	160	30	5.5	6.0	lithium_phosphate	Lithium phosphate	Lithium phosphate mineral; compositional variation
+columbite_fe	Columbite-(Fe)	mineral	FeNb2O6	Niobium	Nb	pegmatite	0	160	30	6.0	6.0	critical_metal	Critical metal	Iron niobate
+tantalite_fe	Tantalite-(Fe)	mineral	FeTa2O6	Tantalum	Ta	pegmatite	0	160	25	6.0	6.5	critical_metal	Critical metal	Iron tantalate
+pyrochlore_group	Pyrochlore Group	mineral-group		Niobium	Nb	igneous	0	160	22	5.0	5.5	critical_metal	Critical metal	Mineral group with varying composition
+monazite_ce	Monazite-(Ce)	mineral	CePO4	Rare Earths	Ce	placer,igneous,metamorphic	0	130	36	5.0	5.5	rare_earth	Rare earth	Cerium phosphate; rare-earth bearing
+bastnasite_ce	Bastnäsite-(Ce)	mineral	CeCO3F	Rare Earths	Ce	carbonatite,hydrothermal	0	130	34	4.0	4.5	rare_earth	Rare earth	Cerium fluorocarbonate
+xenotime_y	Xenotime-(Y)	mineral	YPO4	Rare Earths	Y	placer,pegmatite	0	130	25	4.0	5.0	rare_earth	Rare earth	Yttrium phosphate
+uraninite	Uraninite	mineral	UO2	Uranium	U	igneous,hydrothermal	15	140	35	5.0	6.0	uranium_ore	Uranium ore	Uranium oxide; radioactive
+carnotite	Carnotite	mineral	K2(UO2)2(VO4)2·3H2O	Uranium	U	sedimentary	15	140	25	2.0	2.0	uranium_ore	Uranium ore	Hydrated potassium uranyl vanadate; radioactive
+autunite	Autunite	mineral	Ca(UO2)2(PO4)2·10-12H2O	Uranium	U	weathered	15	140	20	2.0	2.5	uranium_ore	Uranium ore	Hydrated uranyl phosphate; radioactive
+torbernite	Torbernite	mineral	Cu(UO2)2(PO4)2·12H2O	Uranium	U	weathered	15	140	15	2.0	2.5	uranium_ore	Uranium ore	Hydrated copper uranyl phosphate; radioactive
+acanthite	Acanthite	mineral	Ag2S	Silver	Ag	hydrothermal	0	160	30	2.0	2.5	silver_sulfide	Silver sulfide	Silver sulfide
+proustite	Proustite	mineral	Ag3AsS3	Silver	Ag	hydrothermal	0	160	20	2.0	2.5	silver_sulfide	Silver sulfide	Silver arsenic sulfide
+pyrargyrite	Pyrargyrite	mineral	Ag3SbS3	Silver	Ag	hydrothermal	0	160	20	2.5	2.5	silver_sulfide	Silver sulfide	Silver antimony sulfide
+pyrite	Pyrite	mineral	FeS2	Sulfur	Fe,S	hydrothermal,sedimentary,metamorphic	0	130	85	6.0	6.5	sulfide_separation	Sulfide separation	Iron sulfide, often undesirable in copper concentrate
+quartz	Quartz	mineral	SiO2	Silica	Si	igneous,metamorphic,sedimentary	0	130	95	7.0	7.0	industrial_mineral	Industrial mineral	Silica mineral
+fluorite	Fluorite	mineral	CaF2	Fluorine	F	hydrothermal	0	160	50	4.0	4.0	industrial_mineral	Industrial mineral	Calcium fluoride
+graphite	Graphite	native-element	C	Carbon	C	metamorphic	0	130	70	1.0	2.0	carbon_beneficiation	Carbon beneficiation	Crystalline native carbon
+barite	Barite	mineral	BaSO4	Barium	Ba	hydrothermal,sedimentary	0	130	65	3.0	3.5	industrial_mineral	Industrial mineral	Barium sulfate
+fluorapatite	Fluorapatite	mineral	Ca5(PO4)3F	Phosphate	P	igneous,sedimentary	0	130	75	5.0	5.0	phosphate_ore	Phosphate ore	Phosphate mineral
+gypsum	Gypsum	mineral	CaSO4·2H2O	Gypsum	Ca,S	evaporite,sedimentary	0	130	75	2.0	2.0	industrial_mineral	Industrial mineral	Hydrated calcium sulfate
+halite	Halite	mineral	NaCl	Salt	Na,Cl	evaporite	0	130	90	2.0	2.5	industrial_mineral	Industrial mineral	Sodium chloride
+sylvite	Sylvite	mineral	KCl	Potash	K,Cl	evaporite	0	130	45	2.0	2.0	potash	Potash	Potassium chloride
+magnesite	Magnesite	mineral	MgCO3	Magnesium	Mg	sedimentary,metamorphic	0	130	60	3.5	4.5	magnesium_carbonate	Magnesium carbonate	Magnesium carbonate
+calcite	Calcite	mineral	CaCO3	Limestone	Ca	sedimentary,hydrothermal	0	130	90	3.0	3.0	industrial_mineral	Industrial mineral	Calcium carbonate mineral
+dolomite	Dolomite	mineral	CaMg(CO3)2	Dolostone	Ca,Mg	sedimentary	0	130	80	3.5	4.0	industrial_mineral	Industrial mineral	Calcium magnesium carbonate
+corundum	Corundum	mineral	Al2O3	Gemstones	Al	metamorphic,igneous	0	130	30	9.0	9.0	gemstone	Gemstone	Ruby and sapphire are colored varieties of corundum
+beryl	Beryl	mineral	Be3Al2Si6O18	Gemstones	Be	pegmatite,metamorphic	0	130	30	7.5	8.0	gemstone	Gemstone	Emerald and aquamarine are varieties of beryl
+topaz	Topaz	mineral	Al2SiO4(F,OH)2	Gemstones	Al	pegmatite,hydrothermal	0	130	30	8.0	8.0	gemstone	Gemstone	Aluminum fluorosilicate
+celestine	Celestine	mineral	SrSO4	Strontium	Sr	sedimentary	0	130	35	3.0	3.5	industrial_mineral	Industrial mineral	Strontium sulfate
+native_gold	Native Gold	native-element	Au	Gold	Au	placer,hydrothermal	0	130	20	2.5	3.0	native_metal	Native metal	Native gold, often associated with silver
+native_silver	Native Silver	native-element	Ag	Silver	Ag	hydrothermal,placer	0	130	25	2.5	3.0	native_metal	Native metal	Native silver
+native_copper	Native Copper	native-element	Cu	Copper	Cu	hydrothermal,igneous	0	130	20	2.5	3.0	native_metal	Native metal	Native metallic copper
+ilmenite	Ilmenite	mineral	FeTiO3	Titanium	Ti	igneous,placer	0	130	60	5.0	6.0	titanium_ore	Titanium ore	Iron titanium oxide
+rutile	Rutile	mineral	TiO2	Titanium	Ti	igneous,metamorphic,placer	0	130	50	6.0	6.5	titanium_ore	Titanium ore	Titanium dioxide
+zircon	Zircon	mineral	ZrSiO4	Zirconium	Zr	igneous,placer	0	130	50	7.5	7.5	zirconium_ore	Zirconium ore	Zirconium silicate
+vanadinite	Vanadinite	mineral	Pb5(VO4)3Cl	Vanadium	V	weathered	0	130	20	3.0	4.0	vanadium_ore	Vanadium ore	Lead chlorovanadate
+cinnabar	Cinnabar	mineral	HgS	Mercury	Hg	hydrothermal	0	160	20	2.0	2.5	mercury_sulfide	Mercury sulfide	Mercury sulfide; toxic
+stibnite	Stibnite	mineral	Sb2S3	Antimony	Sb	hydrothermal	0	160	35	2.0	2.0	antimony_sulfide	Antimony sulfide	Antimony sulfide
+realgar	Realgar	mineral	As4S4	Arsenic	As	hydrothermal	0	160	20	1.5	2.0	arsenic_sulfide	Arsenic sulfide	Arsenic sulfide; toxic
+orpiment	Orpiment	mineral	As2S3	Arsenic	As	hydrothermal	0	160	20	1.5	2.0	arsenic_sulfide	Arsenic sulfide	Arsenic sulfide; toxic
+native_sulfur	Native Sulfur	native-element	S	Sulfur	S	volcanic,sedimentary	0	130	50	1.5	2.5	native_element	Native element	Native sulfur
+coal	Coal	fuel-rock		Fuel	C	sedimentary	0	90	95			fuel	Solid carbon-rich sedimentary fuel	Geological rock; not a mineral species
+lignite	Lignite	fuel-rock		Fuel	C	sedimentary	0	65	70			fuel	Low-rank coal fuel	Geological coal rank, not mineral
+oil_shale	Oil Shale	fuel-rock		Fuel	C	sedimentary	0	110	45			hydrocarbon_processing	Pyrolysis of kerogen-bearing rock	Sedimentary rock; not a mineral species
+limestone	Limestone	rock		Limestone	Ca	sedimentary	0	130	100			industrial_rock	Crush or calcine to lime	Rock predominantly composed of carbonate minerals
+dolostone	Dolostone	rock		Dolostone	Ca,Mg	sedimentary	0	130	80			industrial_rock	Crush or calcine	Carbonate rock, not the dolomite mineral itself
+granite	Granite	rock		Construction Stone		igneous	0	155	85			industrial_rock	Cut or crush for construction	Igneous rock; mixture of minerals
+basalt	Basalt	rock		Construction Stone		igneous	0	155	90			industrial_rock	Crush for aggregate	Igneous rock; mixture of minerals
+sandstone	Sandstone	rock		Construction Stone		sedimentary	0	110	90			industrial_rock	Crush or cut for construction	Sedimentary rock; mineral composition varies
+shale	Shale	rock		Construction Stone		sedimentary	0	110	80			industrial_rock	Crush, process or use in cement feed	Fine-grained sedimentary rock
+marble	Marble	rock		Construction Stone		metamorphic	0	135	55			industrial_rock	Cut or crush	Metamorphosed carbonate rock

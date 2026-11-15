@@ -1,4 +1,5 @@
 #include "industrial_frontier/save/SaveManager.hpp"
+#include "industrial_frontier/resources/PrimitiveItems.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -21,6 +22,8 @@ namespace industrial_frontier
     namespace
     {
         constexpr std::size_t MaxEdits = 500000;
+        constexpr std::size_t MaxDepletedDeposits = 500000;
+        constexpr std::size_t MaxGatheredObjects = 500000;
         constexpr std::uintmax_t MaxFileBytes = 64000000;
 
         std::uint64_t Hash(const std::string& value)
@@ -43,6 +46,19 @@ namespace industrial_frontier
         {
             if (world.name.empty() || world.name.size() > 64 ||
                 world.seed < 0 || world.edits.size() > MaxEdits ||
+                world.depletedDeposits.size() > MaxDepletedDeposits ||
+                world.felledTrees.size() > MaxGatheredObjects ||
+                world.strippedTrees.size() > MaxGatheredObjects ||
+                world.collectedPebbles.size() > MaxGatheredObjects ||
+                !CampfireWorld::Validate(world.campfires) ||
+                !ClayFurnaceWorld::Validate(world.furnaces) ||
+                !BuildWorld::Validate(world.structures) ||
+                !std::isfinite(world.moldCoolingSeconds) ||
+                world.moldCoolingSeconds < 0.0f ||
+                world.moldCoolingSeconds > 30.001f ||
+                !PlayerInventory::IsValidState(world.inventory) ||
+                !PlayerInventory::IsValidState(world.storage) ||
+                world.selectedQuickbar >= ItemLayout::BarSize ||
                 !FinitePosition(world.x) || !FinitePosition(world.y) ||
                 !FinitePosition(world.z) || !FinitePosition(world.yaw) ||
                 !FinitePosition(world.pitch) || std::abs(world.pitch) > 90.1f)
@@ -57,7 +73,39 @@ namespace industrial_frontier
                     edit.strength > 1000.0f)
                     return false;
             }
-            return true;
+            const auto validUniqueIds = [](const std::vector<std::uint64_t>& ids)
+            {
+                std::unordered_set<std::uint64_t> seen;
+                for (const auto id : ids)
+                {
+                    if (id == 0 || !seen.insert(id).second)
+                        return false;
+                }
+                return true;
+            };
+            const auto validGrid = [](const ItemLayout::Grid& grid)
+            {
+                std::unordered_set<std::string> ids;
+                for (const auto& id : grid)
+                {
+                    if (id.size() > 120 || id.find('\n') != std::string::npos ||
+                        id.find('\r') != std::string::npos ||
+                        (!id.empty() && !ids.insert(id).second))
+                        return false;
+                }
+                return true;
+            };
+            for (const auto& id : world.quickbar)
+            {
+                if (id.size() > 80 || id.find('\n') != std::string::npos ||
+                    id.find('\r') != std::string::npos)
+                    return false;
+            }
+            return validGrid(world.bagSlots) &&
+                validGrid(world.storageSlots) &&
+                validUniqueIds(world.felledTrees) &&
+                validUniqueIds(world.strippedTrees) &&
+                validUniqueIds(world.collectedPebbles);
         }
 
         bool WriteText(const std::filesystem::path& file, const std::string& value)
@@ -163,7 +211,7 @@ namespace industrial_frontier
         }
         std::ostringstream out;
         out << std::setprecision(std::numeric_limits<float>::max_digits10);
-        out << "IFSAVE 1\n";
+        out << "IFSAVE 12\n";
         out << "NAME " << std::quoted(world.name) << '\n';
         out << "SEED " << world.seed << '\n';
         out << "PLAYER " << world.x << ' ' << world.y << ' ' << world.z
@@ -173,6 +221,112 @@ namespace industrial_frontier
             out << edit.x << ' ' << edit.y << ' ' << edit.z << ' '
                 << edit.radius << ' ' << edit.strength << ' '
                 << static_cast<int>(edit.addMaterial) << '\n';
+        out << "DEPLETED " << world.depletedDeposits.size() << '\n';
+        for (std::uint64_t depletedId : world.depletedDeposits)
+        {
+            out << depletedId << '\n';
+        }
+        for (const auto& section : {
+            std::pair{"TREES", &world.felledTrees},
+            std::pair{"BRANCHES", &world.strippedTrees},
+            std::pair{"PEBBLES", &world.collectedPebbles}})
+        {
+            out << section.first << ' ' << section.second->size() << '\n';
+            for (const std::uint64_t id : *section.second)
+                out << id << '\n';
+        }
+        out << "CAMPFIRES " << world.campfires.size() << '\n';
+        for (const auto& fire : world.campfires)
+            out << "FIRE " << fire.id << ' ' << fire.x << ' ' << fire.y
+                << ' ' << fire.z << ' ' << fire.fuelSeconds << ' '
+                << fire.burnProgress << ' ' << fire.charcoalReady << ' '
+                << static_cast<int>(fire.covered) << ' ' << fire.yawDegrees << '\n';
+        out << "FURNACES " << world.furnaces.size() << '\n';
+        for (const auto& f : world.furnaces)
+            out << "FURNACE " << f.id << ' ' << f.x << ' ' << f.y << ' '
+                << f.z << ' ' << f.fuelSeconds << ' ' << f.smeltSeconds << ' '
+                << f.chargeCopperKg << ' ' << f.readyCopperKg << ' '
+                << std::quoted(f.chargeName) << ' '
+                << std::quoted(f.metalId) << ' ' << f.moldCapacity << ' '
+                << f.castCount << ' ' << f.castingCoolingSeconds << ' '
+                << f.yawDegrees << '\n';
+        out << "MOLDCOOLING " << world.moldCoolingSeconds << '\n';
+        out << "STRUCTURES " << world.structures.size() << '\n';
+        for (const auto& s : world.structures)
+        {
+            out << "STRUCTURE " << s.id << ' ' << static_cast<int>(s.kind)
+                << ' ' << s.x << ' ' << s.y << ' ' << s.z << ' '
+                << s.yawDegrees << ' ' << s.contents.carryCapacityBonusKg
+                << ' ' << s.contents.oreBatches.size() << ' '
+                << s.contents.items.size() << '\n';
+            for (const auto& batch : s.contents.oreBatches)
+            {
+                out << "CHEST_ORE " << batch.depositId << ' '
+                    << std::quoted(batch.primaryMineralId) << ' '
+                    << std::quoted(batch.displayName) << ' ' << batch.massKg << ' '
+                    << batch.oreMineralFraction << ' ' << batch.components.size()
+                    << ' ' << static_cast<int>(batch.processingStage) << '\n';
+                for (const auto& component : batch.components)
+                    out << "CHEST_MINERAL " << std::quoted(component.mineralId)
+                        << ' ' << component.massFraction << ' '
+                        << static_cast<int>(component.gangue) << '\n';
+            }
+            for (const auto& item : s.contents.items)
+                out << "CHEST_ITEM " << std::quoted(item.itemId) << ' '
+                    << item.quantity << ' ' << item.durability << '\n';
+        }
+        out << "INVENTORY " << world.inventory.carryCapacityBonusKg << ' '
+            << world.inventory.oreBatches.size() << '\n';
+        for (const auto& batch : world.inventory.oreBatches)
+        {
+            out << "ORE " << batch.depositId << ' '
+                << std::quoted(batch.primaryMineralId) << ' '
+                << std::quoted(batch.displayName) << ' '
+                << batch.massKg << ' ' << batch.oreMineralFraction << ' '
+                << batch.components.size() << ' '
+                << static_cast<int>(batch.processingStage) << '\n';
+            for (const auto& component : batch.components)
+            {
+                out << "MINERAL " << std::quoted(component.mineralId) << ' '
+                    << component.massFraction << ' '
+                    << static_cast<int>(component.gangue) << '\n';
+            }
+        }
+        out << "ITEMS " << world.inventory.items.size() << '\n';
+        for (const auto& stack : world.inventory.items)
+            out << "ITEM " << std::quoted(stack.itemId) << ' ' << stack.quantity
+                << ' ' << stack.durability << '\n';
+        out << "STORAGE " << world.storage.carryCapacityBonusKg << ' '
+            << world.storage.oreBatches.size() << '\n';
+        for (const auto& batch : world.storage.oreBatches)
+        {
+            out << "ORE " << batch.depositId << ' '
+                << std::quoted(batch.primaryMineralId) << ' '
+                << std::quoted(batch.displayName) << ' '
+                << batch.massKg << ' ' << batch.oreMineralFraction << ' '
+                << batch.components.size() << ' '
+                << static_cast<int>(batch.processingStage) << '\n';
+            for (const auto& component : batch.components)
+            {
+                out << "MINERAL " << std::quoted(component.mineralId) << ' '
+                    << component.massFraction << ' '
+                    << static_cast<int>(component.gangue) << '\n';
+            }
+        }
+        out << "STORE_ITEMS " << world.storage.items.size() << '\n';
+        for (const auto& stack : world.storage.items)
+            out << "STORE_ITEM " << std::quoted(stack.itemId) << ' '
+                << stack.quantity << ' ' << stack.durability << '\n';
+        out << "BAGSLOTS " << world.bagSlots.size() << '\n';
+        for (const auto& key : world.bagSlots)
+            out << "SLOT " << std::quoted(key) << '\n';
+        out << "STORESLOTS " << world.storageSlots.size() << '\n';
+        for (const auto& key : world.storageSlots)
+            out << "SLOT " << std::quoted(key) << '\n';
+        out << "HOTBAR " << world.selectedQuickbar << ' '
+            << world.quickbar.size() << '\n';
+        for (const auto& id : world.quickbar)
+            out << "QUICK " << std::quoted(id) << '\n';
         const std::string payload = out.str();
         std::ostringstream checksum;
         checksum << std::hex << Hash(payload);
@@ -374,7 +528,7 @@ namespace industrial_frontier
         std::string tag;
         int version = 0;
         WorldSave loaded;
-        if (!(data >> tag >> version) || tag != "IFSAVE" || version != 1)
+        if (!(data >> tag >> version) || tag != "IFSAVE" || (version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7 && version != 8 && version != 9 && version != 10 && version != 11 && version != 12))
             return false;
         if (!(data >> tag) || tag != "NAME" || !(data >> std::quoted(loaded.name)))
             return false;
@@ -396,6 +550,306 @@ namespace industrial_frontier
                 return false;
             edit.addMaterial = add != 0;
             loaded.edits.push_back(edit);
+        }
+        if (version >= 2)
+        {
+            std::size_t depletedCount = 0;
+            if (!(data >> tag >> depletedCount) || tag != "DEPLETED" ||
+                depletedCount > MaxDepletedDeposits)
+            {
+                return false;
+            }
+            loaded.depletedDeposits.reserve(depletedCount);
+            std::unordered_set<std::uint64_t> seen;
+            for (std::size_t i = 0; i < depletedCount; ++i)
+            {
+                std::uint64_t id = 0;
+                if (!(data >> id) || id == 0 || !seen.insert(id).second)
+                {
+                    return false;
+                }
+                loaded.depletedDeposits.push_back(id);
+            }
+        }
+        if (version >= 5)
+        {
+            const auto readIds = [&](const char* expectedTag,
+                std::vector<std::uint64_t>& ids) -> bool
+            {
+                std::size_t itemCount = 0;
+                if (!(data >> tag >> itemCount) || tag != expectedTag ||
+                    itemCount > MaxGatheredObjects)
+                    return false;
+                std::unordered_set<std::uint64_t> unique;
+                for (std::size_t i = 0; i < itemCount; ++i)
+                {
+                    std::uint64_t id = 0;
+                    if (!(data >> id) || id == 0 || !unique.insert(id).second)
+                        return false;
+                    ids.push_back(id);
+                }
+                return true;
+            };
+            if (!readIds("TREES", loaded.felledTrees) ||
+                !readIds("BRANCHES", loaded.strippedTrees) ||
+                !readIds("PEBBLES", loaded.collectedPebbles))
+                return false;
+        }
+        if (version >= 8)
+        {
+            std::size_t fireCount = 0;
+            if (!(data >> tag >> fireCount) || tag != "CAMPFIRES" ||
+                fireCount > CampfireWorld::MaxCampfires)
+                return false;
+            for (std::size_t i = 0; i < fireCount; ++i)
+            {
+                CampfireState fire{};
+                int covered = -1;
+                if (!(data >> tag) || tag != "FIRE" ||
+                    !(data >> fire.id >> fire.x >> fire.y >> fire.z >>
+                        fire.fuelSeconds >> fire.burnProgress >>
+                        fire.charcoalReady >> covered) ||
+                    (covered != 0 && covered != 1))
+                    return false;
+                if (version >= 11 && !(data >> fire.yawDegrees))
+                    return false;
+                fire.covered = covered == 1;
+                loaded.campfires.push_back(fire);
+            }
+        }
+        if (version >= 9)
+        {
+            std::size_t furnaceCount = 0;
+            if (!(data >> tag >> furnaceCount) || tag != "FURNACES" ||
+                furnaceCount > ClayFurnaceWorld::MaxFurnaces)
+                return false;
+            for (std::size_t i = 0; i < furnaceCount; ++i)
+            {
+                ClayFurnaceState f{};
+                if (!(data >> tag) || tag != "FURNACE" ||
+                    !(data >> f.id >> f.x >> f.y >> f.z >>
+                        f.fuelSeconds >> f.smeltSeconds >>
+                        f.chargeCopperKg >> f.readyCopperKg >>
+                        std::quoted(f.chargeName)))
+                    return false;
+                if (version >= 10 &&
+                    !(data >> std::quoted(f.metalId) >> f.moldCapacity >>
+                        f.castCount >> f.castingCoolingSeconds))
+                    return false;
+                if (version >= 11 && !(data >> f.yawDegrees))
+                    return false;
+                loaded.furnaces.push_back(std::move(f));
+            }
+            if (!(data >> tag >> loaded.moldCoolingSeconds) ||
+                tag != "MOLDCOOLING")
+                return false;
+        }
+        if (version >= 12)
+        {
+            std::size_t structureCount = 0;
+            if (!(data >> tag >> structureCount) || tag != "STRUCTURES" ||
+                structureCount > BuildWorld::MaxStructures)
+                return false;
+            loaded.structures.reserve(structureCount);
+            for (std::size_t i = 0; i < structureCount; ++i)
+            {
+                BuildStructure s;
+                int kind = -1;
+                std::size_t oreCount = 0;
+                std::size_t itemCount = 0;
+                if (!(data >> tag) || tag != "STRUCTURE" ||
+                    !(data >> s.id >> kind >> s.x >> s.y >> s.z >>
+                        s.yawDegrees >> s.contents.carryCapacityBonusKg >>
+                        oreCount >> itemCount) || kind < 0 || kind > 6 ||
+                    oreCount > PlayerInventory::MaxSlots ||
+                    itemCount > PlayerInventory::MaxSlots)
+                    return false;
+                s.kind = static_cast<BuildKind>(kind);
+                for (std::size_t j = 0; j < oreCount; ++j)
+                {
+                    InventoryOreBatch batch;
+                    std::size_t mineralCount = 0;
+                    int stage = -1;
+                    if (!(data >> tag) || tag != "CHEST_ORE" ||
+                        !(data >> batch.depositId >> std::quoted(batch.primaryMineralId)
+                            >> std::quoted(batch.displayName) >> batch.massKg >>
+                            batch.oreMineralFraction >> mineralCount >> stage) ||
+                        mineralCount > 24 || stage < 0 || stage > 5)
+                        return false;
+                    batch.processingStage = static_cast<OreProcessingStage>(stage);
+                    for (std::size_t k = 0; k < mineralCount; ++k)
+                    {
+                        InventoryMineralComponent component;
+                        int gangue = -1;
+                        if (!(data >> tag) || tag != "CHEST_MINERAL" ||
+                            !(data >> std::quoted(component.mineralId) >>
+                                component.massFraction >> gangue) ||
+                            (gangue != 0 && gangue != 1))
+                            return false;
+                        component.gangue = gangue != 0;
+                        batch.components.push_back(std::move(component));
+                    }
+                    s.contents.oreBatches.push_back(std::move(batch));
+                }
+                for (std::size_t j = 0; j < itemCount; ++j)
+                {
+                    InventoryItemStack stack;
+                    unsigned durability = 0;
+                    if (!(data >> tag) || tag != "CHEST_ITEM" ||
+                        !(data >> std::quoted(stack.itemId) >> stack.quantity >>
+                            durability) || durability > 65535)
+                        return false;
+                    stack.durability = static_cast<std::uint16_t>(durability);
+                    s.contents.items.push_back(std::move(stack));
+                }
+                loaded.structures.push_back(std::move(s));
+            }
+        }
+        if (version >= 3)
+        {
+            std::size_t slotCount = 0;
+            if (!(data >> tag >> loaded.inventory.carryCapacityBonusKg >> slotCount) ||
+                tag != "INVENTORY" || slotCount > PlayerInventory::MaxSlots)
+            {
+                return false;
+            }
+            loaded.inventory.oreBatches.reserve(slotCount);
+            for (std::size_t i = 0; i < slotCount; ++i)
+            {
+                InventoryOreBatch batch;
+                std::size_t mineralCount = 0;
+                if (!(data >> tag) || tag != "ORE" ||
+                    !(data >> batch.depositId >> std::quoted(batch.primaryMineralId)
+                        >> std::quoted(batch.displayName) >> batch.massKg
+                        >> batch.oreMineralFraction >> mineralCount) ||
+                    mineralCount > 24)
+                {
+                    return false;
+                }
+                if (version >= 4)
+                {
+                    int stage = -1;
+                    if (!(data >> stage) || stage < 0 || stage > 5)
+                        return false;
+                    batch.processingStage = static_cast<OreProcessingStage>(stage);
+                }
+                batch.components.reserve(mineralCount);
+                for (std::size_t j = 0; j < mineralCount; ++j)
+                {
+                    InventoryMineralComponent component;
+                    int gangue = -1;
+                    if (!(data >> tag) || tag != "MINERAL" ||
+                        !(data >> std::quoted(component.mineralId)
+                            >> component.massFraction >> gangue) ||
+                        (gangue != 0 && gangue != 1))
+                    {
+                        return false;
+                    }
+                    component.gangue = gangue != 0;
+                    batch.components.push_back(std::move(component));
+                }
+                loaded.inventory.oreBatches.push_back(std::move(batch));
+            }
+        }
+        if (version >= 5)
+        {
+            std::size_t itemCount = 0;
+            if (!(data >> tag >> itemCount) || tag != "ITEMS" ||
+                itemCount > PlayerInventory::MaxSlots)
+                return false;
+            for (std::size_t i = 0; i < itemCount; ++i)
+            {
+                InventoryItemStack stack;
+                if (!(data >> tag) || tag != "ITEM" ||
+                    !(data >> std::quoted(stack.itemId) >> stack.quantity))
+                    return false;
+                if (version >= 7)
+                {
+                    unsigned value = 0;
+                    if (!(data >> value) || value > 65535)
+                        return false;
+                    stack.durability = static_cast<std::uint16_t>(value);
+                }
+                else if (const auto* item = FindPrimitiveItem(stack.itemId))
+                    stack.durability = item->maximumDurability;
+                loaded.inventory.items.push_back(std::move(stack));
+            }
+        }
+        if (version >= 6)
+        {
+            std::size_t oreCount = 0;
+            if (!(data >> tag >> loaded.storage.carryCapacityBonusKg >> oreCount) ||
+                tag != "STORAGE" || oreCount > PlayerInventory::MaxSlots)
+                return false;
+            for (std::size_t i = 0; i < oreCount; ++i)
+            {
+                InventoryOreBatch batch;
+                std::size_t mineralCount = 0;
+                int stage = -1;
+                if (!(data >> tag) || tag != "ORE" ||
+                    !(data >> batch.depositId >> std::quoted(batch.primaryMineralId)
+                        >> std::quoted(batch.displayName) >> batch.massKg
+                        >> batch.oreMineralFraction >> mineralCount >> stage) ||
+                    mineralCount > 24 || stage < 0 || stage > 5)
+                    return false;
+                batch.processingStage = static_cast<OreProcessingStage>(stage);
+                for (std::size_t j = 0; j < mineralCount; ++j)
+                {
+                    InventoryMineralComponent component;
+                    int gangue = -1;
+                    if (!(data >> tag) || tag != "MINERAL" ||
+                        !(data >> std::quoted(component.mineralId)
+                            >> component.massFraction >> gangue) ||
+                        (gangue != 0 && gangue != 1))
+                        return false;
+                    component.gangue = gangue != 0;
+                    batch.components.push_back(std::move(component));
+                }
+                loaded.storage.oreBatches.push_back(std::move(batch));
+            }
+            std::size_t itemCount = 0;
+            if (!(data >> tag >> itemCount) || tag != "STORE_ITEMS" ||
+                itemCount > PlayerInventory::MaxSlots)
+                return false;
+            for (std::size_t i = 0; i < itemCount; ++i)
+            {
+                InventoryItemStack stack;
+                if (!(data >> tag) || tag != "STORE_ITEM" ||
+                    !(data >> std::quoted(stack.itemId) >> stack.quantity))
+                    return false;
+                if (version >= 7)
+                {
+                    unsigned value = 0;
+                    if (!(data >> value) || value > 65535)
+                        return false;
+                    stack.durability = static_cast<std::uint16_t>(value);
+                }
+                else if (const auto* item = FindPrimitiveItem(stack.itemId))
+                    stack.durability = item->maximumDurability;
+                loaded.storage.items.push_back(std::move(stack));
+            }
+            std::size_t gridCount = 0;
+            if (!(data >> tag >> gridCount) || tag != "BAGSLOTS" ||
+                gridCount != loaded.bagSlots.size())
+                return false;
+            for (auto& key : loaded.bagSlots)
+                if (!(data >> tag) || tag != "SLOT" ||
+                    !(data >> std::quoted(key)))
+                    return false;
+            if (!(data >> tag >> gridCount) || tag != "STORESLOTS" ||
+                gridCount != loaded.storageSlots.size())
+                return false;
+            for (auto& key : loaded.storageSlots)
+                if (!(data >> tag) || tag != "SLOT" ||
+                    !(data >> std::quoted(key)))
+                    return false;
+            if (!(data >> tag >> loaded.selectedQuickbar >> gridCount) ||
+                tag != "HOTBAR" || gridCount != loaded.quickbar.size())
+                return false;
+            for (auto& id : loaded.quickbar)
+                if (!(data >> tag) || tag != "QUICK" ||
+                    !(data >> std::quoted(id)))
+                    return false;
         }
         if (!Validate(loaded))
             return false;

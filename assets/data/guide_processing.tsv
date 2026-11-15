@@ -1,0 +1,45 @@
+route_id	title	products	process	notes
+alumina	Aluminum minerals	Alumina (Al2O3); aluminum metal	Beneficiation -> alumina production -> electrolytic aluminum reduction	Bauxite is a rock. Aluminum metal is not produced by ordinary ore smelting.
+antimony_sulfide	Antimony sulfides	Antimony metal	Concentration -> controlled smelting -> refining	Processing must manage sulfur-bearing products.
+arsenic_sulfide	Arsenic sulfides	Specialty arsenic products	Specialized separation and controlled processing	Toxic arsenic compounds require specialized handling.
+carbon_beneficiation	Graphite processing	Graphite concentrate	Crushing -> flotation or purification -> sizing	Graphite is native carbon; not a metal ore.
+chromium_oxide	Chromite processing	Chromium-bearing concentrate; ferrochrome	Beneficiation -> high-temperature reduction	Chromite is an important chromium ore.
+cobalt_arsenide	Cobalt arsenides	Cobalt-bearing concentrate; cobalt metal	Concentration -> specialized extraction -> refining	Arsenic-bearing mineral processing needs dedicated controls.
+copper_oxide	Oxidized copper minerals	Copper-bearing solution or concentrate; copper metal	Beneficiation or leaching -> copper recovery -> refining	Suitable routes vary among carbonates, silicates and oxides.
+copper_sulfide	Copper sulfide minerals	Copper concentrate; refined copper	Crushing -> flotation -> smelting -> converting -> refining	Chalcopyrite and bornite can occur together. Pyrite may enter tailings.
+critical_metal	Niobium and tantalum ores	Niobium or tantalum concentrate; refined metal products	Concentration -> separation -> specialized refining	Different minerals require different separation routes.
+fuel	Solid geological fuels	Coal fuel; thermal energy	Sizing -> cleaning -> combustion or industrial use	Coal and lignite are rocks, not mineral species.
+gemstone	Gem minerals	Cut gemstones; industrial abrasives	Sorting -> grading -> cutting or processing	Gem quality depends on characteristics beyond chemical formula.
+hydrocarbon_processing	Oil shale processing	Shale oil and byproducts	Mining -> retorting -> upgrading	Kerogen-bearing sedimentary rock; not conventional crude oil.
+industrial_mineral	Industrial minerals	Mineral feedstocks; glass or industrial products	Sorting -> crushing -> purification -> product-specific use	Quartz may support glassmaking. Not every industrial mineral is smelted.
+industrial_rock	Industrial rock processing	Aggregate; cut stone; lime or cement feed	Crushing, sizing, cutting or calcining as appropriate	Rock recipes depend on composition. Limestone may be calcined.
+iron_carbonate	Iron carbonates	Iron-bearing concentrate; iron metal	Roasting where needed -> concentration -> ironmaking	Siderite can be roasted before magnetic concentration.
+iron_magnetic	Magnetite processing	Iron concentrate; iron metal; steel feed	Crushing -> magnetic separation -> ironmaking	Recovery varies with mineral liberation and process settings.
+iron_oxide	Iron oxide processing	Iron concentrate; iron metal; steel feed	Crushing -> beneficiation -> ironmaking	Hematite and goethite require route-specific beneficiation.
+lead_oxide	Oxidized lead minerals	Lead-bearing concentrate; lead metal	Concentration or conversion -> reduction -> refining	Carbonate and sulfate lead minerals need tailored processing.
+lead_sulfide	Lead sulfide processing	Lead concentrate; refined lead	Flotation -> smelting -> refining	Galena often occurs with other sulfide minerals.
+lithium_phosphate	Lithium phosphate minerals	Lithium chemicals	Concentration -> conversion -> hydrometallurgy	Specialized lithium chemical route; not simple smelting.
+lithium_silicate	Lithium silicate minerals	Lithium chemicals	Beneficiation -> thermal conversion -> leaching -> purification	Spodumene and petalite have distinct processing requirements.
+magnesium_carbonate	Magnesium carbonate minerals	Magnesia; magnesium products	Beneficiation -> calcination -> further processing	Magnesite is an industrial source of magnesia.
+manganese_carbonate	Manganese carbonates	Manganese concentrate; manganese products	Roasting or beneficiation -> reduction or refining	Route depends on ore chemistry and target product.
+manganese_oxide	Manganese oxides	Manganese concentrate; manganese alloy	Beneficiation -> metallurgical reduction	Manganese grades and gangue impact processing.
+mercury_sulfide	Mercury sulfide minerals	Mercury products	Specialized controlled extraction and containment	Mercury is highly toxic; industrial controls are essential.
+moly_oxide	Molybdenum oxides	Molybdenum concentrate	Beneficiation -> chemical processing -> refining	Processing differs from molybdenum sulfides.
+moly_sulfide	Molybdenum sulfides	Molybdenum oxide; molybdenum metal	Flotation -> roasting -> reduction or further refining	Molybdenite is a principal molybdenum ore.
+native_element	Native elements	Elemental material or industrial feed	Collect -> sort -> purify as needed	Processing depends on the element and deposit composition.
+native_metal	Native metals	Recovered metal; refined metal products	Sorting -> concentration -> refining when required	Native copper, silver and gold are already metallic minerals.
+nickel_sulfide	Nickel sulfide minerals	Nickel concentrate; refined nickel	Flotation -> smelting or hydrometallurgy -> refining	Nickel-bearing sulfides may include iron and copper.
+phosphate_ore	Phosphate minerals	Phosphate concentrate; phosphoric products	Concentration -> chemical processing	Apatite is used for phosphate production.
+potash	Potash minerals	Potassium chloride product	Crushing -> separation -> drying	Sylvite is a source of potassium chloride.
+rare_earth	Rare-earth minerals	Separated rare-earth oxides; metals	Beneficiation -> chemical separation -> refining	Rare-earth separations require multiple processing steps.
+silver_sulfide	Silver sulfides	Silver concentrate; refined silver	Concentration -> extraction -> refining	Process choice depends on associated metals.
+sulfide_separation	Iron sulfides	Pyrite concentrate or sulfur-bearing feed	Selective separation -> controlled treatment	Pyrite is not normally a primary copper mineral.
+tin_oxide	Tin oxides	Tin concentrate; refined tin	Gravity concentration -> smelting -> refining	Cassiterite is a major tin ore.
+tin_sulfide	Tin sulfides	Tin-bearing concentrate; refined tin	Flotation -> metallurgical recovery -> refining	Mixed sulfide concentrates require selective processing.
+titanium_ore	Titanium minerals	Titanium feedstock; titanium products	Beneficiation -> pigment or metal-specific processing	Rutile and ilmenite have different industrial routes.
+tungsten_ore	Tungsten minerals	Tungsten concentrate; tungsten metal	Gravity or flotation -> chemical conversion -> reduction	Scheelite and wolframite may need different concentration methods.
+uranium_ore	Uranium minerals	Uranium concentrate	Controlled mining -> leaching -> purification	Radioactive materials require specialized safeguards.
+vanadium_ore	Vanadium minerals	Vanadium chemicals; vanadium alloys	Beneficiation -> chemical extraction -> refining	Recovery depends on ore composition.
+zinc_oxide	Oxidized zinc minerals	Zinc-bearing solution; refined zinc	Concentration or leaching -> purification -> zinc recovery	Oxides and carbonates do not behave like zinc sulfides.
+zinc_sulfide	Zinc sulfides	Zinc concentrate; refined zinc	Flotation -> roasting -> leaching -> electrowinning	Sphalerite is a major zinc ore.
+zirconium_ore	Zirconium minerals	Zircon concentrate; zirconium products	Mineral separation -> specialized processing	Zircon can be used directly or processed further.

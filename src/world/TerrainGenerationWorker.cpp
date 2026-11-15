@@ -229,6 +229,38 @@ namespace industrial_frontier
         return true;
     }
 
+    bool TerrainGenerationWorker::DepleteDeposit(std::uint64_t id)
+    {
+        std::shared_ptr<VoxelTerrain> terrain;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            terrain = m_voxelTerrain;
+        }
+        return terrain && terrain->DepleteDeposit(id);
+    }
+
+    bool TerrainGenerationWorker::ReplaceDepletedDeposits(
+        const std::vector<std::uint64_t>& ids)
+    {
+        std::shared_ptr<VoxelTerrain> terrain;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            terrain = m_voxelTerrain;
+        }
+        if (!terrain)
+        {
+            return false;
+        }
+        terrain->SetDepletedDeposits(ids);
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_requests = {};
+            m_pending.clear();
+            m_completed.clear();
+        }
+        return true;
+    }
+
     float TerrainGenerationWorker::SampleDensity(float x, float y, float z) const
     {
         std::shared_ptr<VoxelTerrain> terrain;
