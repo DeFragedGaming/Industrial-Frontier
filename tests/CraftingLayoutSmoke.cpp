@@ -58,8 +58,8 @@ int main()
         "survival category has stone equipment and firemaking");
     Check(PrimitiveCraftingOverlay::CategoryEntries(1).size() == 6,
         "metallurgy category has furnace mold casting and copper tools");
-    Check(PrimitiveCraftingOverlay::CategoryEntries(2).size() == 7,
-        "building category has chest and six cabin parts");
+    Check(PrimitiveCraftingOverlay::CategoryEntries(2).size() == 10,
+        "construction category includes crushers mills and sluices");
 
     const std::size_t metallurgy = PrimitiveCraftingOverlay::SelectCategory(0, 1);
     Check(metallurgy == 4, "keyboard next category opens furnace");
@@ -75,6 +75,8 @@ int main()
         "previous construction page works");
     Check(PrimitiveCraftingOverlay::SelectVisibleSlot(10, 5) == 15,
         "number six selects last recipe on first page");
+    Check(PrimitiveCraftingOverlay::SelectVisibleSlot(16, 3) == 19,
+        "last second-page tile selects the new sluice recipe");
     Check(PrimitiveCraftingOverlay::SelectVisibleSlot(16, 5) == 16,
         "empty second-page slots do not select non-existent recipes");
     Check(PrimitiveCraftingOverlay::SelectCategory(building, 1) == 0,
@@ -98,7 +100,7 @@ int main()
         {std::pair{614,386}, std::pair{1280,720}, std::pair{1920,1080}})
     {
         for (std::size_t recipe : {std::size_t{0}, std::size_t{4},
-            std::size_t{10}, std::size_t{16}})
+            std::size_t{10}, std::size_t{16}, std::size_t{19}})
         {
             drawn.clear();
             InventoryState inventory{};

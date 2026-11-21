@@ -1,5 +1,6 @@
 #include "industrial_frontier/forest/ForestGenerator.hpp"
 #include "industrial_frontier/resources/GeologyGenerator.hpp"
+#include "industrial_frontier/world/RiverSystem.hpp"
 
 #include <algorithm>
 #include <array>
@@ -260,6 +261,8 @@ namespace industrial_frontier
                     continue;
                 }
 
+                if (RiverSystem::Sample(x,z,terrain.GetGenerator().GetSettings().seed).signedDistance > -5.0f)
+                    continue;
                 const float y = terrain.GetSurfaceHeight(x, z);
                 if (!std::isfinite(y) || y < -14.0f || y > 37.0f)
                 {
@@ -365,6 +368,8 @@ namespace industrial_frontier
                 const float x = (cx + 0.18f + Random01(hash + 3u) * 0.64f) * cell;
                 const float z = (cz + 0.18f + Random01(hash + 11u) * 0.64f) * cell;
                 if (x < minX || x >= maxX || z < minZ || z >= maxZ)
+                    continue;
+                if (RiverSystem::Sample(x,z,terrain.GetGenerator().GetSettings().seed).signedDistance > -5.0f)
                     continue;
                 const float y = terrain.GetSurfaceHeight(x, z);
                 if (!std::isfinite(y) || y < -25.0f || y > 60.0f ||

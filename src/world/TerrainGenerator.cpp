@@ -1,5 +1,6 @@
 
 #include "industrial_frontier/world/TerrainGenerator.hpp"
+#include "industrial_frontier/world/RiverSystem.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -159,7 +160,7 @@ namespace industrial_frontier
         return total / totalAmplitude;
     }
 
-    float TerrainGenerator::GetHeight(float worldX, float worldZ) const
+    float TerrainGenerator::GetNaturalHeight(float worldX, float worldZ) const
     {
         const TerrainSettings& s = m_settings;
 
@@ -477,5 +478,48 @@ namespace industrial_frontier
 
         return s.baseHeight +
             Interpolate(flattenedHeight, terrainHeight, 1.0f - plainsBlend);
+    }
+    float TerrainGenerator::GetRiverSurfaceHeight(float worldX, float worldZ) const
+    {
+        const RiverSample sample = RiverSystem::Sample(worldX, worldZ, m_settings.seed);
+        const float riverHeight = GetNaturalHeight(sample.centerX, worldZ) -
+            (sample.isTributary ? 1.14f : 1.52f);
+        if (sample.lakeInfluence <= 0.001f)
+            return riverHeight;
+        const float lakeHeight = GetNaturalHeight(sample.lakeCenterX, sample.lakeCenterZ) - 3.0f;
+        const float blend = sample.isLake ? 1.0f : sample.lakeInfluence;
+        return riverHeight + (lakeHeight - riverHeight) * blend;
+    }
+
+    float TerrainGenerator::GetHeight(float worldX, float worldZ) const
+    {
+        const float natural = GetNaturalHeight(worldX, worldZ);
+        const RiverSample river = RiverSystem::Sample(worldX, worldZ, m_settings.seed);
+        const float margin = river.isLake ? 5.5f : river.isTributary ? 2.2f : 4.2f;
+        if (river.signedDistance <= -margin)
+            return natural;
+
+        const float waterSurface = GetRiverSurfaceHeight(worldX, worldZ);
+        const float core = std::clamp(river.signedDistance /
+            std::max(0.5f, river.halfWidth), 0.0f, 1.0f);
+        const float depth = river.isLake ? 3.4f : river.isTributary ? 0.84f : 1.50f;
+        const float streambed = waterSurface - depth * (0.34f + 0.66f * core);
+        const float bankTransition = std::clamp((river.signedDistance + margin) /
+            (margin + 0.75f), 0.0f, 1.0f);
+        const float blend = bankTransition * bankTransition * (3.0f - 2.0f * bankTransition);
+        return natural + (std::min(natural, streambed) - natural) * blend;
+    }
+
+    bool TerrainGenerator::GetRiverWater(float x, float z,
+        float& surfaceY, float& flowX, float& flowZ, float& speed) const
+    {
+        const RiverSample river = RiverSystem::Sample(x, z, m_settings.seed);
+        if (!river.inWater)
+            return false;
+        surfaceY = GetRiverSurfaceHeight(x, z);
+        flowX = river.flowX;
+        flowZ = river.flowZ;
+        speed = river.speed;
+        return true;
     }
 }

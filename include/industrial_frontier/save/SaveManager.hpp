@@ -5,6 +5,8 @@
 #include "industrial_frontier/resources/Campfire.hpp"
 #include "industrial_frontier/resources/EarlyMetallurgy.hpp"
 #include "industrial_frontier/resources/BuildStructures.hpp"
+#include "industrial_frontier/resources/OreCrusher.hpp"
+#include "industrial_frontier/resources/PrimitiveProcessingMachines.hpp"
 #include "industrial_frontier/ui/ItemLayout.hpp"
 
 #include <filesystem>
@@ -31,6 +33,8 @@ namespace industrial_frontier
         std::vector<CampfireState> campfires;
         std::vector<ClayFurnaceState> furnaces;
         std::vector<BuildStructure> structures;
+        std::vector<OreCrusherState> crushers;
+        std::vector<PrimitiveMachineState> processingMachines;
         float moldCoolingSeconds = 0.0f;
         InventoryState inventory;
         InventoryState storage = []

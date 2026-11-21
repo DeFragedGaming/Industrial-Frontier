@@ -33,9 +33,10 @@ namespace industrial_frontier
             const char* status;
         };
 
-        constexpr std::array<GuideMachine, 8> Machines{{
-            {"Ore Crusher", "Break mined rock into smaller pieces for mineral liberation.", "Prototype available via P (Stage 10E)"},
-            {"Grinding Mill", "Further reduce particle size before mineral separation.", "Prototype available via P (Stage 10E)"},
+        constexpr std::array<GuideMachine, 9> Machines{{
+            {"Ore Crusher - Edge-Runner", "Hand-cranked crushing of raw ore from every mineral tier.", "Stage 10H-1: craft kit, place with F, load E, crank R, collect T"},
+            {"Hand-Powered Ore Mill", "Grind crushed ore from all mineral tiers.", "Stage 10H-2: craft in Construction, F place, V choose, E load, hold R grind, T collect"},
+            {"River Sluice", "Separate ground minerals and waste rock by flowing river water.", "Stage 10H-2: place in natural river, V choose, E load, flow processes, T collect"},
             {"Magnetic Separator", "Separate suitable magnetic minerals from their gangue.", "Prototype available via P (Stage 10E)"},
             {"Flotation Cell", "Concentrate suitable minerals using selective flotation.", "Prototype available via P (Stage 10E)"},
             {"Roasting Furnace", "Thermally prepare certain mineral feeds before separation.", "Prototype available via P (Stage 10E)"},
@@ -66,7 +67,7 @@ namespace industrial_frontier
                 "Stone tools gather starter copper minerals. Smelt the recovered copper in a clay furnace, cast 0.25 kg ingots, then craft Copper Axe (2 ingots and 2 sticks), Copper Pickaxe (3 ingots and 2 sticks), or Copper Shovel (1 ingot and 2 sticks). Copper tools last longer and work faster.",
                 "Copper pickaxes unlock a defined group of moderate-grade minerals including Chalcopyrite, Bornite, Chalcocite, Covellite, Galena, Sphalerite, Bauxite and Fluorite. They still cannot mine Hematite, Magnetite, Pyrite, Quartz, Cassiterite, gold/silver ores or rare high-tier deposits."},
             {"05 - Placement and control keys", "F PREVIEW > R/Q TURN > F PLACE",
-                "Equip any placeable kit in your hotbar: campfire, furnace, wooden chest, or log cabin module. Press F to preview; cyan is valid and red is blocked. Turn with R/Q in 45-degree steps and press F to commit. Press X or Escape to cancel. Aim at a placed object and press X to dismantle. The chest must be empty first. Open a chest with B while looking at it. Otherwise B opens your original starter storage. The starter storage remains compatible with older saves.",
+                "Equip any placeable kit in your hotbar: campfire, furnace, wooden chest, or log cabin module. Press F to preview; cyan is valid and red is blocked. Turn with R/Q in 45-degree steps and press F to commit. Press X or Escape to cancel. Aim at a placed object and press X to dismantle. The chest must be empty first. Open a chest with B while looking at it. Otherwise B opens your original starter storage. The starter storage remains compatible with older saves. The Primitive Edge-Runner Crusher can be crafted in Construction from 12 Raw Stone, 8 Logs, 8 Sticks, and 4 Clay Soil. F previews and places it; V selects a raw ore batch, E loads up to 30 kg, hold R to crank, T collects the crushed ore, X dismantles an empty crusher. Harder ores require more turns.",
                 "Left-click excavation requires a shovel for dirt/clay and a pickaxe for stone. Crafting: C opens; Left/Right switches Survival, Metalwork and Construction; Up/Down selects recipes; 1-6 selects a visible recipe; PageUp/PageDown changes recipe pages; Enter or the CRAFT button makes an item. Click tabs and recipes with the mouse. Furnace: V selects ore; E loads or pours; R adds charcoal; T collects ingots. G guide, I inventory, P processing."},
             {"06 - Build a wooden chest", "CRAFT A CHEST, STORE MATERIALS",
                 "Open crafting with C and switch to the Construction tab to select Wooden Chest: 8 Logs and 6 Sticks. Equip its kit on the hotbar, press F to preview and F to place. Aim at the chest and press B to open its independent 30-slot, 1400 kg inventory. Choose x1, x5, x10, Half or All for drag-and-drop transfers. Different chests hold different items, even after saving and loading.",
@@ -76,7 +77,7 @@ namespace industrial_frontier
                 "This is the starter log construction tier. A doorframe is an open passage, not a functioning door yet. Larger roofs, doors, stairs and building-condition systems belong to later construction upgrades."}
         }};
 
-        constexpr std::array<MetallurgyPage, 7> MetallurgyPages{{
+        constexpr std::array<MetallurgyPage, 8> MetallurgyPages{{
             {"01 - Copper, tin and lead", "MINERALS, NOT GENERIC ORE",
                 "The ORES tab is grouped by metal. Select Copper, Tin or Lead to see exactly which real minerals contain the metal. The clay furnace can recover copper from Native Copper, Malachite, Azurite and Cuprite; tin from Cassiterite; and lead from Cerussite. The amount recovered depends on each batch's actual mineral fractions and chemical composition.",
                 "Cassiterite needs a higher mining tier; the copper pickaxe cannot mine it. Chalcopyrite, Bornite, Chalcocite, Covellite and iron-bearing hard ores need advanced metallurgy. Lead fumes and compounds are highly toxic in real life."},
@@ -97,7 +98,10 @@ namespace industrial_frontier
                 "The mold is no longer transferred between hot, cooled and inventory states for each casting. Existing legacy hot Copper Molds can still complete and be collected."},
             {"07 - Craft copper tools", "METALWORKING PROGRESSION",
                 "Copper Ingots enable the Copper Axe (2 ingots and 2 sticks), Copper Pickaxe (3 ingots and 2 sticks) and Copper Shovel (1 ingot and 2 sticks). A copper pickaxe unlocks several medium-grade minerals but not Cassiterite, Quartz, Hematite or Magnetite. Tin and Lead Ingots are new metallurgy outputs; recipes using them will come later.",
-                "The clay furnace is limited to suitable early non-sulfide metal-bearing minerals. Iron and sulfides require industrial upgrades."}
+                "The clay furnace is limited to suitable early non-sulfide metal-bearing minerals. Iron and sulfides require industrial upgrades."},
+            {"08 - Rivers, grinding and sluicing", "CRUSH > MILL > RIVER SEPARATION",
+                "Stage 10H-2: Main rivers meander through the terrain, tributaries join them, smaller channels split and reconnect, and some reaches widen into lakes. Flowing water has directional movement, while lakes have calmer surfaces. River placement and shoreline shapes are deterministic for each seed. Craft a Hand-Powered Ore Mill from 10 Raw Stone, 6 Logs, 8 Sticks and 2 Clay Soil. Place on level ground with F; select crushed ore with V, load E, hold R to grind and collect with T. The mill accepts crushed ore from all mining tiers, up to 25 kg. Craft a River Sluice with 8 Logs, 10 Sticks and 4 Raw Stone. It must be placed in flowing river water. Select ground ore with V, load up to 20 kg with E, then let the river current drive separation automatically. Collect concentrate and tailings with T. Press X to recover an empty machine.",
+                "Concentrates contain a higher percentage of recoverable heavy minerals than the original ground rock, while tailings retain unrecovered material. The sluice uses gravity separation, not chemical flotation, and is less efficient for lighter minerals. The existing P processing menu remains available for laboratory/prototype processing."}
         }};
 
         template <std::size_t N>

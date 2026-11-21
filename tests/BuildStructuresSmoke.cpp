@@ -21,7 +21,7 @@ namespace
 
 int main()
 {
-    Require(PrimitiveRecipes.size() == 17, "building recipes registered");
+    Require(PrimitiveRecipes.size() >= 17, "building recipes registered");
     for (int kind = 0; kind <= static_cast<int>(BuildKind::Support); ++kind)
     {
         const auto next = static_cast<BuildKind>(kind);

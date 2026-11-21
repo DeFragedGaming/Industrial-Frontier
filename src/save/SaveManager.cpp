@@ -53,6 +53,8 @@ namespace industrial_frontier
                 !CampfireWorld::Validate(world.campfires) ||
                 !ClayFurnaceWorld::Validate(world.furnaces) ||
                 !BuildWorld::Validate(world.structures) ||
+                !OreCrusherWorld::Validate(world.crushers) ||
+                !PrimitiveProcessingMachines::Validate(world.processingMachines) ||
                 !std::isfinite(world.moldCoolingSeconds) ||
                 world.moldCoolingSeconds < 0.0f ||
                 world.moldCoolingSeconds > 30.001f ||
@@ -211,7 +213,7 @@ namespace industrial_frontier
         }
         std::ostringstream out;
         out << std::setprecision(std::numeric_limits<float>::max_digits10);
-        out << "IFSAVE 12\n";
+        out << "IFSAVE 14\n";
         out << "NAME " << std::quoted(world.name) << '\n';
         out << "SEED " << world.seed << '\n';
         out << "PLAYER " << world.x << ' ' << world.y << ' ' << world.z
@@ -274,6 +276,62 @@ namespace industrial_frontier
             for (const auto& item : s.contents.items)
                 out << "CHEST_ITEM " << std::quoted(item.itemId) << ' '
                     << item.quantity << ' ' << item.durability << '\n';
+        }
+        out << "CRUSHERS " << world.crushers.size() << '\n';
+        for (const auto& crusher : world.crushers)
+        {
+            const auto& batch = crusher.batch;
+            out << "CRUSHER " << crusher.id << ' ' << crusher.x << ' '
+                << crusher.y << ' ' << crusher.z << ' '
+                << crusher.yawDegrees << ' ' << crusher.workDone << ' '
+                << crusher.workRequired << ' ' << crusher.rotationRadians << ' '
+                << (batch.massKg > 0.0f ? 1 : 0) << '\n';
+            if (batch.massKg > 0.0f)
+            {
+                out << "CRUSHER_ORE " << batch.depositId << ' '
+                    << std::quoted(batch.primaryMineralId) << ' '
+                    << std::quoted(batch.displayName) << ' ' << batch.massKg << ' '
+                    << batch.oreMineralFraction << ' ' << batch.components.size()
+                    << ' ' << static_cast<int>(batch.processingStage) << '\n';
+                for (const auto& component : batch.components)
+                    out << "CRUSHER_MINERAL " << std::quoted(component.mineralId)
+                        << ' ' << component.massFraction << ' '
+                        << static_cast<int>(component.gangue) << '\n';
+            }
+        }
+        out << "MACHINES " << world.processingMachines.size() << '\n';
+        for (const auto& m : world.processingMachines)
+        {
+            out << "MACHINE " << m.id << ' ' << static_cast<int>(m.kind) << ' '
+                << m.x << ' ' << m.y << ' ' << m.z << ' '
+                << m.yawDegrees << ' ' << m.workDone << ' '
+                << m.workRequired << ' ' << m.rotationRadians << ' '
+                << (m.feed.massKg>0.0f?1:0) << ' '
+                << (m.tailings.massKg>0.0f?1:0) << '\n';
+            if(m.feed.massKg>0.0f)
+            {
+                const auto& b=m.feed;
+                out << "MACHINE_FEED " << b.depositId << ' '
+                    << std::quoted(b.primaryMineralId) << ' '
+                    << std::quoted(b.displayName) << ' ' << b.massKg << ' '
+                    << b.oreMineralFraction << ' ' << b.components.size() << ' '
+                    << static_cast<int>(b.processingStage) << '\n';
+                for(const auto& c:b.components)
+                    out << "MACHINE_MINERAL " << std::quoted(c.mineralId) << ' '
+                        << c.massFraction << ' ' << static_cast<int>(c.gangue) << '\n';
+            }
+            if(m.tailings.massKg>0.0f)
+            {
+                const auto& b=m.tailings;
+                out << "MACHINE_TAIL " << b.depositId << ' '
+                    << std::quoted(b.primaryMineralId) << ' '
+                    << std::quoted(b.displayName) << ' ' << b.massKg << ' '
+                    << b.oreMineralFraction << ' ' << b.components.size() << ' '
+                    << static_cast<int>(b.processingStage) << '\n';
+                for(const auto& c:b.components)
+                    out << "MACHINE_MINERAL " << std::quoted(c.mineralId) << ' '
+                        << c.massFraction << ' ' << static_cast<int>(c.gangue) << '\n';
+            }
         }
         out << "INVENTORY " << world.inventory.carryCapacityBonusKg << ' '
             << world.inventory.oreBatches.size() << '\n';
@@ -528,7 +586,7 @@ namespace industrial_frontier
         std::string tag;
         int version = 0;
         WorldSave loaded;
-        if (!(data >> tag >> version) || tag != "IFSAVE" || (version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7 && version != 8 && version != 9 && version != 10 && version != 11 && version != 12))
+        if (!(data >> tag >> version) || tag != "IFSAVE" || (version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7 && version != 8 && version != 9 && version != 10 && version != 11 && version != 12 && version != 13 && version != 14))
             return false;
         if (!(data >> tag) || tag != "NAME" || !(data >> std::quoted(loaded.name)))
             return false;
@@ -703,6 +761,97 @@ namespace industrial_frontier
                     s.contents.items.push_back(std::move(stack));
                 }
                 loaded.structures.push_back(std::move(s));
+            }
+        }
+        if (version >= 13)
+        {
+            std::size_t count = 0;
+            if (!(data >> tag >> count) || tag != "CRUSHERS" ||
+                count > OreCrusherWorld::MaxCrushers)
+                return false;
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                OreCrusherState crusher;
+                int hasBatch = -1;
+                if (!(data >> tag) || tag != "CRUSHER" ||
+                    !(data >> crusher.id >> crusher.x >> crusher.y >> crusher.z >>
+                      crusher.yawDegrees >> crusher.workDone >>
+                      crusher.workRequired >> crusher.rotationRadians >> hasBatch) ||
+                    (hasBatch != 0 && hasBatch != 1))
+                    return false;
+                if (hasBatch)
+                {
+                    auto& batch = crusher.batch;
+                    std::size_t minerals = 0;
+                    int stage = -1;
+                    if (!(data >> tag) || tag != "CRUSHER_ORE" ||
+                        !(data >> batch.depositId >> std::quoted(batch.primaryMineralId)
+                          >> std::quoted(batch.displayName) >> batch.massKg >>
+                          batch.oreMineralFraction >> minerals >> stage) ||
+                        minerals > 24 || stage < 0 || stage > 5)
+                        return false;
+                    batch.processingStage = static_cast<OreProcessingStage>(stage);
+                    for (std::size_t j = 0; j < minerals; ++j)
+                    {
+                        InventoryMineralComponent component;
+                        int gangue = -1;
+                        if (!(data >> tag) || tag != "CRUSHER_MINERAL" ||
+                            !(data >> std::quoted(component.mineralId)
+                              >> component.massFraction >> gangue) ||
+                            (gangue != 0 && gangue != 1))
+                            return false;
+                        component.gangue = gangue != 0;
+                        batch.components.push_back(std::move(component));
+                    }
+                }
+                loaded.crushers.push_back(std::move(crusher));
+            }
+        }
+        if (version >= 14)
+        {
+            std::size_t machineCount=0;
+            if(!(data >> tag >> machineCount) || tag!="MACHINES" ||
+                machineCount>PrimitiveProcessingMachines::MaxMachines)
+                return false;
+            for(std::size_t i=0;i<machineCount;++i)
+            {
+                PrimitiveMachineState m;
+                int kind=-1,hasFeed=-1,hasTail=-1;
+                if(!(data >> tag) || tag!="MACHINE" ||
+                    !(data >> m.id >> kind >> m.x >> m.y >> m.z >>
+                      m.yawDegrees >> m.workDone >> m.workRequired >>
+                      m.rotationRadians >> hasFeed >> hasTail) ||
+                    kind<0 || kind>1 || hasFeed<0 || hasFeed>1 ||
+                    hasTail<0 || hasTail>1)
+                    return false;
+                m.kind=static_cast<PrimitiveMachineKind>(kind);
+                const auto readBatch=[&](const char* expected, InventoryOreBatch& b)
+                {
+                    std::size_t count=0;
+                    int stage=-1;
+                    if(!(data >> tag) || tag!=expected ||
+                        !(data >> b.depositId >> std::quoted(b.primaryMineralId) >>
+                          std::quoted(b.displayName) >> b.massKg >>
+                          b.oreMineralFraction >> count >> stage) ||
+                        count>24 || stage<0 || stage>5)
+                        return false;
+                    b.processingStage=static_cast<OreProcessingStage>(stage);
+                    for(std::size_t k=0;k<count;++k)
+                    {
+                        InventoryMineralComponent c;
+                        int gangue=-1;
+                        if(!(data >> tag) || tag!="MACHINE_MINERAL" ||
+                            !(data >> std::quoted(c.mineralId) >> c.massFraction >> gangue) ||
+                            gangue<0 || gangue>1)
+                            return false;
+                        c.gangue=gangue!=0;
+                        b.components.push_back(std::move(c));
+                    }
+                    return true;
+                };
+                if(hasFeed && !readBatch("MACHINE_FEED",m.feed))return false;
+                if(hasTail && !readBatch("MACHINE_TAIL",m.tailings))return false;
+                loaded.processingMachines.push_back(std::move(m));
             }
         }
         if (version >= 3)

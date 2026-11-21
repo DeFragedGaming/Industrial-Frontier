@@ -32,7 +32,8 @@ namespace industrial_frontier
             if (selected >= PrimitiveRecipes.size())
                 return 0;
             const std::string_view id = PrimitiveRecipes[selected].resultId;
-            if (id == "wooden_chest_kit" || id.starts_with("log_"))
+            if (id == "wooden_chest_kit" || id == "ore_crusher_kit" ||
+                id == "hand_mill_kit" || id == "sluice_kit" || id.starts_with("log_"))
                 return 2;
             if (id.starts_with("copper_") || id.starts_with("tin_") ||
                 id.starts_with("lead_") || id == "multi_ingot_mold" ||

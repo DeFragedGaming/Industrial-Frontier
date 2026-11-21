@@ -1,4 +1,4 @@
-name: Linux - Stage 10 Part One
+name: Industrial Frontier - Linux Build
 
 on:
   push:
@@ -15,20 +15,53 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-linux:
-    name: Ubuntu 24.04 / C++20 / SDL3
+  linux:
+    name: Ubuntu 24.04 / Release / C++20
     runs-on: ubuntu-24.04
     timeout-minutes: 60
 
     steps:
-      - name: Check out repository
+      - name: Checkout source
         uses: actions/checkout@v4
+
+      - name: Verify committed source files
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import subprocess
+
+          cmake = Path("CMakeLists.txt").read_text(encoding="utf-8")
+          sources = sorted(set(re.findall(r"\b(?:src|tests)/[\w./-]+\.cpp\b", cmake)))
+          missing = [path for path in sources if not Path(path).is_file()]
+          untracked = [
+              path for path in sources
+              if Path(path).is_file()
+              and subprocess.run(
+                  ["git", "ls-files", "--error-unmatch", "--", path],
+                  capture_output=True,
+              ).returncode != 0
+          ]
+
+          if missing or untracked:
+              if missing:
+                  print("Missing files referenced by CMakeLists.txt:")
+                  print("\n".join(missing))
+              if untracked:
+                  print("Untracked files referenced by CMakeLists.txt:")
+                  print("\n".join(untracked))
+              print("Commit all source and test files before pushing. For ignored tests: git add -f -- tests/*.cpp")
+              raise SystemExit(1)
+
+          print(f"Verified {len(sources)} tracked C++ source/test files")
+          PY
 
       - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential cmake ninja-build pkg-config git curl unzip \
+            build-essential cmake ninja-build pkg-config git curl unzip binutils \
             libgl1-mesa-dev libopengl0 libegl1-mesa-dev \
             libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
             libxfixes-dev libxi-dev libxss-dev libxtst-dev \
@@ -37,7 +70,7 @@ jobs:
             libdbus-1-dev libudev-dev libusb-1.0-0-dev \
             libdecor-0-dev libpipewire-0.3-dev
 
-      - name: Configure Release build
+      - name: Configure Release
         run: |
           cmake -S . -B build-linux -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
@@ -46,10 +79,10 @@ jobs:
       - name: Build game and tests
         run: cmake --build build-linux --parallel 4
 
-      - name: Run regression tests
+      - name: Run all regression tests
         run: ctest --test-dir build-linux --output-on-failure --parallel 2
 
-      - name: Upload test logs on failure
+      - name: Upload failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
         with:
@@ -57,19 +90,26 @@ jobs:
           path: build-linux/Testing/Temporary/LastTest.log
           if-no-files-found: ignore
 
-      - name: Package Linux build
+      - name: Package portable Linux build
         run: bash tools/linux/package.sh build-linux dist
 
       - name: Verify package
+        shell: bash
         run: |
-          tar -tzf dist/IndustrialFrontier-Stage10-Part1-Linux-x64.tar.gz | grep -F '/run.sh'
-          tar -tzf dist/IndustrialFrontier-Stage10-Part1-Linux-x64.tar.gz | grep -F '/IndustrialFrontier'
-          tar -tzf dist/IndustrialFrontier-Stage10-Part1-Linux-x64.tar.gz | grep -F '/assets/'
+          set -euo pipefail
+          archive="dist/IndustrialFrontier-Linux-x64.tar.gz"
+          test -s "$archive"
+          tar -tzf "$archive" | grep -Fx 'IndustrialFrontier-Linux-x64/run.sh'
+          tar -tzf "$archive" | grep -Fx 'IndustrialFrontier-Linux-x64/IndustrialFrontier'
+          tar -tzf "$archive" | grep -Fx 'IndustrialFrontier-Linux-x64/assets/'
+          (cd dist && sha256sum --check IndustrialFrontier-Linux-x64.tar.gz.sha256)
 
       - name: Upload Linux build
         uses: actions/upload-artifact@v4
         with:
-          name: IndustrialFrontier-Stage10-Part1-Linux-x64
-          path: dist/IndustrialFrontier-Stage10-Part1-Linux-x64.tar.gz
+          name: IndustrialFrontier-Linux-x64
+          path: |
+            dist/IndustrialFrontier-Linux-x64.tar.gz
+            dist/IndustrialFrontier-Linux-x64.tar.gz.sha256
           if-no-files-found: error
           retention-days: 30

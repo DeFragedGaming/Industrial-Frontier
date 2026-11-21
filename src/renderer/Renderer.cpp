@@ -7,6 +7,10 @@
 #include "industrial_frontier/resources/EarlyMetallurgy.hpp"
 #include "industrial_frontier/renderer/ClayFurnaceVisuals.hpp"
 #include "industrial_frontier/renderer/BuildStructureVisuals.hpp"
+#include "industrial_frontier/renderer/OreCrusherVisuals.hpp"
+#include "industrial_frontier/renderer/RiverVisuals.hpp"
+#include "industrial_frontier/renderer/PrimitiveMachineVisuals.hpp"
+#include "industrial_frontier/resources/PrimitiveProcessingMachines.hpp"
 #include "industrial_frontier/resources/BuildStructures.hpp"
 #include "industrial_frontier/player/BuildCollision.hpp"
 #include "industrial_frontier/resources/HotbarEquipment.hpp"
@@ -357,10 +361,21 @@ namespace industrial_frontier
         DrawElementsProc DrawElements = nullptr;
 
         Shader terrainShader;
+        Shader riverShader;
         Shader campfireParticleShader;
         CampfireWorld campfires;
         ClayFurnaceWorld furnaces;
         BuildWorld constructions;
+        OreCrusherWorld crushers;
+        PrimitiveProcessingMachines processingMachines;
+        GPUChunk processingMachineMesh{};
+        bool processingMachinesDirty = true;
+        std::size_t selectedProcessingOre = 0;
+        float processingCrankCooldown = 0.0f;
+        GPUChunk crusherProps{};
+        bool crushersDirty = true;
+        std::size_t selectedCrusherOre = 0;
+        float crusherCrankCooldown = 0.0f;
         GPUChunk constructionProps{};
         bool constructionsDirty = true;
         BuildKind selectedBuildKind = BuildKind::Chest;
@@ -378,7 +393,7 @@ namespace industrial_frontier
         GPUChunk campfireSmoke{};
         bool campfirePropsDirty = true;
         bool campfireParticlesDirty = true;
-        enum class PlacementKind { None, Campfire, Furnace, Construction };
+        enum class PlacementKind { None, Campfire, Furnace, Construction, Crusher, Mill, Sluice };
         struct PlacementPose
         {
             float x = 0.0f;
@@ -405,6 +420,7 @@ namespace industrial_frontier
 
         std::unordered_map<std::uint64_t, GPUChunk> gpuChunks;
         std::unordered_map<std::uint64_t, GPUChunk> forestChunks;
+        std::unordered_map<std::uint64_t, GPUChunk> riverChunks;
         std::unordered_map<std::uint64_t, std::vector<ForestTree>> treesByChunk;
         std::unordered_map<std::uint64_t, std::vector<ForestPebble>> pebblesByChunk;
         std::unordered_set<std::uint64_t> felledTreeIds;
@@ -606,6 +622,73 @@ namespace industrial_frontier
             return chosen;
         }
 
+        const OreCrusherState* TraceCrusher(float reach) const
+        {
+            const Vec3 ray = Normalize(playerCameraForward);
+            const Vec3 origin = playerCameraPosition;
+            const OreCrusherState* chosen = nullptr;
+            float nearest = std::min(reach, TraceVoxelDistance(reach) + 0.35f);
+            for (const auto& crusher : crushers.Crushers())
+            {
+                const Vec3 center{crusher.x,crusher.y+1.04f,crusher.z};
+                const Vec3 delta = Subtract(center,origin);
+                const float t = Dot(delta,ray);
+                if (t <= 0.05f || t > nearest)
+                    continue;
+                const Vec3 projected = Add(origin,Multiply(ray,t));
+                const Vec3 distance = Subtract(center,projected);
+                if (Dot(distance,distance) < 1.42f*1.42f)
+                {
+                    chosen = &crusher;
+                    nearest = t;
+                }
+            }
+            return chosen;
+        }
+
+        const PrimitiveMachineState* TracePrimitiveMachine(float reach) const
+        {
+            const Vec3 ray=Normalize(playerCameraForward);
+            const Vec3 origin=playerCameraPosition;
+            const PrimitiveMachineState* selected=nullptr;
+            float nearest=std::min(reach,TraceVoxelDistance(reach)+0.5f);
+            for(const auto& machine:processingMachines.Machines())
+            {
+                const Vec3 center{machine.x,machine.y+0.85f,machine.z};
+                const Vec3 delta=Subtract(center,origin);
+                const float t=Dot(delta,ray);
+                if(t<0.05f || t>nearest)continue;
+                const Vec3 diff=Subtract(center,Add(origin,Multiply(ray,t)));
+                const float radius=machine.kind==PrimitiveMachineKind::Mill?1.4f:1.75f;
+                if(Dot(diff,diff)<radius*radius)
+                {
+                    selected=&machine;
+                    nearest=t;
+                }
+            }
+            return selected;
+        }
+
+        std::vector<std::size_t> ProcessingOreIndices(PrimitiveMachineKind kind) const
+        {
+            std::vector<std::size_t> indices;
+            const auto& batches=inventory.OreBatches();
+            for(std::size_t i=0;i<batches.size();++i)
+                if(PrimitiveProcessingMachines::InputStage(kind,batches[i].processingStage))
+                    indices.push_back(i);
+            return indices;
+        }
+
+        std::vector<std::size_t> RawCrusherOreIndices() const
+        {
+            std::vector<std::size_t> choices;
+            const auto& ores = inventory.OreBatches();
+            for (std::size_t i=0;i<ores.size();++i)
+                if (ores[i].processingStage == OreProcessingStage::Raw)
+                    choices.push_back(i);
+            return choices;
+        }
+
         void RefreshStructureColliders()
         {
             nearbyStructures.clear();
@@ -627,6 +710,21 @@ namespace industrial_frontier
                 if (dx * dx + dz * dz < 32.0f * 32.0f)
                     nearbyStructures.push_back({kiln.x, kiln.y, kiln.z,
                         0.89f, 2.08f});
+            }
+            for (const auto& crusher : crushers.Crushers())
+            {
+                const float dx=crusher.x-px,dz=crusher.z-pz;
+                if (dx*dx+dz*dz<32.0f*32.0f)
+                    nearbyStructures.push_back({crusher.x,crusher.y,crusher.z,
+                        1.70f,2.27f});
+            }
+            for (const auto& machine : processingMachines.Machines())
+            {
+                const float dx=machine.x-px,dz=machine.z-pz;
+                if(dx*dx+dz*dz<32.0f*32.0f)
+                    nearbyStructures.push_back({machine.x,machine.y,machine.z,
+                        machine.kind==PrimitiveMachineKind::Mill?1.20f:1.75f,
+                        machine.kind==PrimitiveMachineKind::Mill?2.18f:0.53f});
             }
             for (const auto& s : constructions.Structures())
             {
@@ -650,15 +748,47 @@ namespace industrial_frontier
                 playerCameraForward.z * playerCameraForward.z);
             if (forwardLength < 0.01f)
                 return pose;
-            const bool kiln = kind == PlacementKind::Furnace;
+            const bool kiln = kind == PlacementKind::Furnace ||
+                kind == PlacementKind::Crusher || kind == PlacementKind::Mill;
             const bool building = kind == PlacementKind::Construction;
-            const float forwardReach = kiln ? 3.2f : building ? 3.6f : 2.35f;
+            const float forwardReach = kind == PlacementKind::Crusher ? 3.8f :
+                kind == PlacementKind::Mill || kind == PlacementKind::Sluice ? 3.6f :
+                kiln ? 3.2f : building ? 3.6f : 2.35f;
             pose.x = player.GetX() + forwardReach *
                 playerCameraForward.x / forwardLength;
             pose.z = player.GetZ() + forwardReach *
                 playerCameraForward.z / forwardLength;
             pose.y = terrain->GetSurfaceHeight(pose.x, pose.z) +
                 (kiln ? 0.04f : 0.035f);
+            if(kind==PlacementKind::Sluice)
+            {
+                float waterY=0.0f,flowX=0.0f,flowZ=0.0f,flowSpeed=0.0f;
+                if(!terrainWorld.GetGenerator().GetRiverWater(pose.x,pose.z,
+                    waterY,flowX,flowZ,flowSpeed) || flowSpeed<0.4f)
+                    return pose;
+                pose.y=waterY+0.12f;
+                const float dx=pose.x-player.GetX(),dz=pose.z-player.GetZ();
+                if(dx*dx+dz*dz<2.0f || std::abs(pose.y-player.GetY())>2.8f ||
+                    processingMachines.Machines().size()>=PrimitiveProcessingMachines::MaxMachines)
+                    return pose;
+                for(const auto& machine:processingMachines.Machines())
+                {
+                    const float mx=machine.x-pose.x,mz=machine.z-pose.z;
+                    if(mx*mx+mz*mz<12.25f)return pose;
+                }
+                for(const auto& crusher:crushers.Crushers())
+                {
+                    const float mx=crusher.x-pose.x,mz=crusher.z-pose.z;
+                    if(mx*mx+mz*mz<12.25f)return pose;
+                }
+                for(const auto& structure:constructions.Structures())
+                {
+                    const float mx=structure.x-pose.x,mz=structure.z-pose.z;
+                    if(mx*mx+mz*mz<9.0f)return pose;
+                }
+                pose.valid=true;
+                return pose;
+            }
             if (building)
             {
                 const auto* foundation = constructions.NearestFoundation(pose.x,pose.z,4.0f);
@@ -701,7 +831,9 @@ namespace industrial_frontier
                 terrain->SampleDensity(pose.x, pose.y +
                     (kiln ? 2.2f : 1.3f), pose.z) > 0.0f)
                 return pose;
-            const float footprint = building ? 1.35f : kiln ? 0.75f : 0.70f;
+            const float footprint = building ? 1.35f :
+                kind == PlacementKind::Crusher || kind == PlacementKind::Mill ? 1.48f :
+                kiln ? 0.75f : 0.70f;
             if (!building || selectedBuildKind == BuildKind::Foundation ||
                 selectedBuildKind == BuildKind::Chest)
             for (const auto [dx,dz] : {
@@ -731,12 +863,32 @@ namespace industrial_frontier
                 if (dx * dx + dz * dz < (kiln ? 6.25f : 3.24f))
                     return pose;
             }
+            for (const auto& crusher : crushers.Crushers())
+            {
+                const float dx=crusher.x-pose.x,dz=crusher.z-pose.z;
+                if (dx*dx+dz*dz<8.0f)
+                    return pose;
+            }
+            for (const auto& machine:processingMachines.Machines())
+            {
+                const float dx=machine.x-pose.x,dz=machine.z-pose.z;
+                if(dx*dx+dz*dz<11.5f)return pose;
+            }
             for (const auto& f : furnaces.Furnaces())
             {
                 const float dx = f.x - pose.x;
                 const float dz = f.z - pose.z;
                 if (dx * dx + dz * dz < (kiln ? 6.25f : 5.0f))
                     return pose;
+            }
+            if (kind == PlacementKind::Crusher)
+            {
+                for (const auto& structure : constructions.Structures())
+                {
+                    const float dx=structure.x-pose.x,dz=structure.z-pose.z;
+                    if (dx*dx+dz*dz<7.3f && std::abs(structure.y-pose.y)<3.0f)
+                        return pose;
+                }
             }
             if (building)
             {
@@ -755,8 +907,14 @@ namespace industrial_frontier
                     }
                 }
             }
-            else if ((kiln && furnaces.Furnaces().size() >= ClayFurnaceWorld::MaxFurnaces) ||
-                (!kiln && campfires.Fires().size() >= CampfireWorld::MaxCampfires))
+            else if ((kind == PlacementKind::Furnace &&
+                    furnaces.Furnaces().size() >= ClayFurnaceWorld::MaxFurnaces) ||
+                (kind == PlacementKind::Crusher &&
+                    crushers.Crushers().size() >= OreCrusherWorld::MaxCrushers) ||
+                (kind == PlacementKind::Mill && processingMachines.Machines().size() >=
+                    PrimitiveProcessingMachines::MaxMachines) ||
+                (kind == PlacementKind::Campfire &&
+                    campfires.Fires().size() >= CampfireWorld::MaxCampfires))
                 return pose;
             pose.valid = true;
             return pose;
@@ -788,6 +946,32 @@ namespace industrial_frontier
                 s.x = pose.x; s.y = pose.y; s.z = pose.z;
                 s.yawDegrees = placementYaw;
                 BuildStructureVisuals::Build({s},mesh);
+            }
+            else if (placement == PlacementKind::Mill || placement == PlacementKind::Sluice)
+            {
+                PrimitiveMachineState m{};
+                m.kind=placement==PlacementKind::Mill?
+                    PrimitiveMachineKind::Mill:PrimitiveMachineKind::Sluice;
+                m.x=pose.x;m.y=pose.y;m.z=pose.z;
+                m.yawDegrees=placementYaw;
+                if(m.kind==PrimitiveMachineKind::Sluice)
+                {
+                    float water=0.0f,fx=0.0f,fz=0.0f,speed=0.0f;
+                    if(terrainWorld.GetGenerator().GetRiverWater(pose.x,pose.z,
+                        water,fx,fz,speed))
+                    {
+                        m.yawDegrees=std::atan2(-fx,fz)*180.0f/Pi;
+                        if(m.yawDegrees<0.0f)m.yawDegrees+=360.0f;
+                    }
+                }
+                PrimitiveMachineVisuals::Build({m},mesh);
+            }
+            else if (placement == PlacementKind::Crusher)
+            {
+                OreCrusherState s{};
+                s.x=pose.x; s.y=pose.y; s.z=pose.z;
+                s.yawDegrees=placementYaw;
+                OreCrusherVisuals::Build({s},mesh);
             }
             else if (placement == PlacementKind::Furnace)
             {
@@ -857,6 +1041,25 @@ namespace industrial_frontier
             BuildStructureVisuals::Build(constructions.Structures(),mesh);
             if (UploadCampfireMesh(mesh,constructionProps))
                 constructionsDirty = false;
+        }
+
+        void UpdateProcessingMachineMesh()
+        {
+            if(!processingMachinesDirty)return;
+            VoxelMesh mesh;
+            PrimitiveMachineVisuals::Build(processingMachines.Machines(),mesh);
+            if(UploadCampfireMesh(mesh,processingMachineMesh))
+                processingMachinesDirty=false;
+        }
+
+        void UpdateCrusherMeshes()
+        {
+            if (!crushersDirty)
+                return;
+            VoxelMesh mesh;
+            OreCrusherVisuals::Build(crushers.Crushers(),mesh);
+            if (UploadCampfireMesh(mesh,crusherProps))
+                crushersDirty = false;
         }
 
         void UpdateFurnaceMeshes()
@@ -1515,6 +1718,18 @@ namespace industrial_frontier
             }
 
             RefreshForestChunk(chunk.GetChunkX(), chunk.GetChunkZ());
+            VoxelMesh water;
+            RiverVisuals::BuildChunk(terrainWorld.GetGenerator(),
+                chunk.GetChunkX(),chunk.GetChunkZ(),terrainWorld.GetChunkSize(),water);
+            GPUChunk waterMesh{};
+            if(!water.IsEmpty())BuildGPUMesh(water.vertices,water.indices,waterMesh);
+            auto oldWater=riverChunks.find(key);
+            if(oldWater!=riverChunks.end())
+            {
+                DeleteChunk(oldWater->second);
+                riverChunks.erase(oldWater);
+            }
+            if(waterMesh.indexCount>0)riverChunks.emplace(key,waterMesh);
             return true;
         }
 
@@ -1575,6 +1790,10 @@ namespace industrial_frontier
             DeleteChunk(campfireSmoke);
             DeleteChunk(furnaceProps);
             DeleteChunk(constructionProps);
+            DeleteChunk(crusherProps);
+            DeleteChunk(processingMachineMesh);
+            processingMachinesDirty = true;
+            crushersDirty = true;
             constructionsDirty = true;
             DeleteChunk(furnaceFlames);
             DeleteChunk(furnaceSmoke);
@@ -1586,6 +1805,7 @@ namespace industrial_frontier
             player.SetStructureColliders(&nearbyStructures);
             furnacePropsDirty = true;
             furnaceParticlesDirty = true;
+            crusherCrankCooldown = 0.0f;
             campfirePropsDirty = true;
             campfireParticlesDirty = true;
             fireVisualTime = 0.0f;
@@ -1596,6 +1816,8 @@ namespace industrial_frontier
             }
 
             gpuChunks.clear();
+            for(auto& entry:riverChunks)DeleteChunk(entry.second);
+            riverChunks.clear();
             for (auto& entry : forestChunks)
             {
                 DeleteChunk(entry.second);
@@ -1957,6 +2179,15 @@ namespace industrial_frontier
                 }
             }
 
+            for(auto it=riverChunks.begin();it!=riverChunks.end();)
+            {
+                if(IsOutsideUnloadRadius(it->first))
+                {
+                    DeleteChunk(it->second);
+                    it=riverChunks.erase(it);
+                }
+                else ++it;
+            }
             for (auto iterator = forestChunks.begin(); iterator != forestChunks.end();)
             {
                 if (IsOutsideUnloadRadius(iterator->first))
@@ -2187,10 +2418,20 @@ namespace industrial_frontier
             return false;
         }
 
+        if (!m_impl->riverShader.LoadFromFiles(
+                "assets/shaders/river.vert",
+                "assets/shaders/river.frag"))
+        {
+            m_impl->terrainShader.Shutdown();
+            std::cerr << "Failed to load river shaders.\n";
+            return false;
+        }
+
         if (!m_impl->campfireParticleShader.LoadFromFiles(
                 "assets/shaders/campfire.vert",
                 "assets/shaders/campfire.frag"))
         {
+            m_impl->riverShader.Shutdown();
             m_impl->terrainShader.Shutdown();
             std::cerr << "Failed to load procedural fire shaders.\n";
             return false;
@@ -2226,6 +2467,7 @@ namespace industrial_frontier
 
         if (!m_impl->StartTerrainGeneration())
         {
+            m_impl->riverShader.Shutdown();
             m_impl->terrainShader.Shutdown();
             m_impl->campfireParticleShader.Shutdown();
             return false;
@@ -2331,6 +2573,12 @@ namespace industrial_frontier
                 m_impl->equippedItem != "furnace_kit") ||
              (m_impl->placement == Impl::PlacementKind::Campfire &&
                 m_impl->equippedItem != "campfire_kit") ||
+             (m_impl->placement == Impl::PlacementKind::Crusher &&
+                m_impl->equippedItem != "ore_crusher_kit") ||
+             (m_impl->placement == Impl::PlacementKind::Mill &&
+                m_impl->equippedItem != "hand_mill_kit") ||
+             (m_impl->placement == Impl::PlacementKind::Sluice &&
+                m_impl->equippedItem != "sluice_kit") ||
              (m_impl->placement == Impl::PlacementKind::Construction &&
                 m_impl->equippedItem != BuildKitId(m_impl->selectedBuildKind))))
         {
@@ -2372,6 +2620,15 @@ namespace industrial_frontier
             if (m_impl->equippedItem == "furnace_kit" &&
                 m_impl->inventory.ItemCount("furnace_kit") > 0)
                 m_impl->placement = Impl::PlacementKind::Furnace;
+            else if (m_impl->equippedItem == "ore_crusher_kit" &&
+                m_impl->inventory.ItemCount("ore_crusher_kit") > 0)
+                m_impl->placement = Impl::PlacementKind::Crusher;
+            else if (m_impl->equippedItem == "hand_mill_kit" &&
+                m_impl->inventory.ItemCount("hand_mill_kit") > 0)
+                m_impl->placement = Impl::PlacementKind::Mill;
+            else if (m_impl->equippedItem == "sluice_kit" &&
+                m_impl->inventory.ItemCount("sluice_kit") > 0)
+                m_impl->placement = Impl::PlacementKind::Sluice;
             else if (m_impl->equippedItem == "campfire_kit" &&
                 m_impl->inventory.ItemCount("campfire_kit") > 0)
                 m_impl->placement = Impl::PlacementKind::Campfire;
@@ -2394,13 +2651,388 @@ namespace industrial_frontier
             m_impl->Notify("PREVIEW RED - MOVE TO LEVEL, UNOBSTRUCTED GROUND");
             return false;
         }
-        const bool placed = m_impl->placement == Impl::PlacementKind::Construction
+        const bool placed = m_impl->placement == Impl::PlacementKind::Mill ||
+            m_impl->placement == Impl::PlacementKind::Sluice
+            ? PlacePrimitiveMachine() :
+            m_impl->placement == Impl::PlacementKind::Crusher
+            ? PlaceOreCrusher() :
+            m_impl->placement == Impl::PlacementKind::Construction
             ? PlaceBuildStructure() :
             m_impl->placement == Impl::PlacementKind::Furnace
             ? PlaceClayFurnace() : PlaceCampfire();
         if (placed)
             m_impl->placement = Impl::PlacementKind::None;
         return placed;
+    }
+
+    bool Renderer::PlacePrimitiveMachine()
+    {
+        if(!m_impl || !m_impl->initialized || m_impl->cinematicMode)
+            return false;
+        const auto kind=m_impl->placement==Impl::PlacementKind::Sluice?
+            PrimitiveMachineKind::Sluice:PrimitiveMachineKind::Mill;
+        const char* kit=kind==PrimitiveMachineKind::Mill?"hand_mill_kit":"sluice_kit";
+        if(m_impl->equippedItem!=kit || m_impl->inventory.ItemCount(kit)==0)
+            return false;
+        const auto pose=m_impl->ComputePlacementPose(m_impl->placement);
+        if(!pose.valid)
+        {
+            m_impl->Notify(kind==PrimitiveMachineKind::Sluice?
+                "SLUICE NEEDS A FLOWING RIVER":"MILL NEEDS LEVEL CLEAR GROUND");
+            return false;
+        }
+        float yaw=m_impl->placementYaw;
+        if(kind==PrimitiveMachineKind::Sluice)
+        {
+            float water=0.0f,fx=0.0f,fz=0.0f,speed=0.0f;
+            if(!m_impl->terrainWorld.GetGenerator().GetRiverWater(pose.x,pose.z,
+                water,fx,fz,speed) || speed<0.4f)
+                return false;
+            yaw=std::atan2(-fx,fz)*180.0f/Pi;
+            if(yaw<0.0f)yaw+=360.0f;
+        }
+        const bool flowing=RiverSystem::HasFlow(pose.x,pose.z,
+            m_impl->terrainWorld.GetSettings().seed);
+        if(!m_impl->processingMachines.Place(kind,pose.x,pose.y,pose.z,yaw,flowing))
+        {
+            m_impl->Notify("MACHINE PLACEMENT BLOCKED");
+            return false;
+        }
+        m_impl->inventory.RemoveItem(kit,1);
+        m_impl->processingMachinesDirty=true;
+        m_impl->Notify(kind==PrimitiveMachineKind::Mill?
+            "MILL PLACED | V CRUSHED ORE | E LOAD | HOLD R | T COLLECT":
+            "SLUICE PLACED | V GROUND ORE | E LOAD | FLOW | T COLLECT");
+        return true;
+    }
+
+    bool Renderer::HasPrimitiveMachineTarget() const
+    {
+        return m_impl && m_impl->initialized && !m_impl->cinematicMode &&
+            m_impl->TracePrimitiveMachine(6.0f)!=nullptr;
+    }
+
+    bool Renderer::CyclePrimitiveMachineOre()
+    {
+        if(!HasPrimitiveMachineTarget())return false;
+        const auto* machine=m_impl->TracePrimitiveMachine(6.0f);
+        if(!machine)return false;
+        const auto choices=m_impl->ProcessingOreIndices(machine->kind);
+        if(choices.empty())
+        {
+            m_impl->Notify(machine->kind==PrimitiveMachineKind::Mill?
+                "CRUSH ORE BEFORE MILLING":"MILL ORE BEFORE SLUICING");
+            return true;
+        }
+        m_impl->selectedProcessingOre=(m_impl->selectedProcessingOre+1)%choices.size();
+        m_impl->Notify("PROCESSING ORE: "+
+            m_impl->inventory.OreBatches()[choices[m_impl->selectedProcessingOre]].displayName);
+        return true;
+    }
+
+    bool Renderer::LoadPrimitiveMachine()
+    {
+        if(!HasPrimitiveMachineTarget())return false;
+        const auto* machine=m_impl->TracePrimitiveMachine(6.0f);
+        if(!machine)return false;
+        if(machine->feed.massKg>0.0f)
+        {
+            m_impl->Notify(PrimitiveProcessingMachines::OutputStage(machine->kind,
+                machine->feed.processingStage)?"PRESS T TO COLLECT OUTPUT":
+                machine->kind==PrimitiveMachineKind::Mill?
+                "HOLD R TO GRIND ORE":"RIVER FLOW IS PROCESSING ORE");
+            return true;
+        }
+        const auto choices=m_impl->ProcessingOreIndices(machine->kind);
+        if(choices.empty())
+        {
+            m_impl->Notify(machine->kind==PrimitiveMachineKind::Mill?
+                "NO CRUSHED ORE IN INVENTORY":"NO GROUND ORE IN INVENTORY");
+            return true;
+        }
+        const auto index=choices[m_impl->selectedProcessingOre%choices.size()];
+        const auto& batch=m_impl->inventory.OreBatches()[index];
+        InventoryOreBatch feed=batch;
+        feed.massKg=std::min(batch.massKg,PrimitiveProcessingMachines::Capacity(machine->kind));
+        PlayerInventory next=m_impl->inventory;
+        if(!next.RemoveOre(index,feed.massKg))
+        {
+            m_impl->Notify("ORE TRANSFER FAILED");
+            return true;
+        }
+        if(!m_impl->processingMachines.Load(machine->id,feed))
+        {
+            m_impl->Notify("MACHINE CANNOT ACCEPT ORE");
+            return true;
+        }
+        m_impl->inventory=std::move(next);
+        m_impl->processingMachinesDirty=true;
+        m_impl->Notify("LOADED "+feed.displayName+" | "+
+            std::to_string(static_cast<int>(feed.massKg))+" KG");
+        return true;
+    }
+
+    void Renderer::UpdatePrimitiveMachines(float deltaTime,bool crankHeld)
+    {
+        if(!m_impl || !m_impl->initialized || m_impl->cinematicMode)return;
+        deltaTime=std::clamp(deltaTime,0.0f,0.1f);
+        for(const auto& machine:m_impl->processingMachines.Machines())
+        {
+            if(machine.kind!=PrimitiveMachineKind::Sluice || machine.feed.massKg<=0.0f ||
+                machine.feed.processingStage!=OreProcessingStage::Ground)
+                continue;
+            float water=0.0f,fx=0.0f,fz=0.0f,speed=0.0f;
+            if(m_impl->terrainWorld.GetGenerator().GetRiverWater(machine.x,machine.z,
+                water,fx,fz,speed) &&
+                m_impl->processingMachines.Flow(machine.id,deltaTime,speed))
+                m_impl->processingMachinesDirty=true;
+        }
+        m_impl->processingCrankCooldown=std::max(0.0f,
+            m_impl->processingCrankCooldown-deltaTime);
+        if(!crankHeld)
+        {
+            m_impl->processingCrankCooldown=0.0f;
+            return;
+        }
+        const auto* machine=m_impl->TracePrimitiveMachine(6.0f);
+        if(!machine || machine->kind!=PrimitiveMachineKind::Mill ||
+            m_impl->processingCrankCooldown>0.0f)
+            return;
+        m_impl->processingCrankCooldown=0.36f;
+        if(m_impl->processingMachines.Crank(machine->id))
+        {
+            m_impl->processingMachinesDirty=true;
+            const auto* updated=m_impl->processingMachines.Find(machine->id);
+            if(updated && updated->feed.processingStage==OreProcessingStage::Ground)
+                m_impl->Notify("GROUND ORE READY | PRESS T TO COLLECT");
+        }
+    }
+
+    bool Renderer::CollectPrimitiveMachine()
+    {
+        if(!HasPrimitiveMachineTarget())return false;
+        const auto* machine=m_impl->TracePrimitiveMachine(6.0f);
+        if(!machine)return false;
+        if(!PrimitiveProcessingMachines::OutputStage(machine->kind,
+            machine->feed.processingStage))
+        {
+            m_impl->Notify("PROCESS ORE BEFORE COLLECTION");
+            return true;
+        }
+        PlayerInventory next=m_impl->inventory;
+        if(!next.AddOre(machine->feed) ||
+            (machine->tailings.massKg>0.0f && !next.AddOre(machine->tailings)))
+        {
+            m_impl->Notify("INVENTORY FULL - EMPTY ROOM FOR ORE OUTPUT");
+            return true;
+        }
+        InventoryOreBatch product,tailings;
+        if(!m_impl->processingMachines.Collect(machine->id,product,tailings))
+            return true;
+        m_impl->inventory=std::move(next);
+        m_impl->processingMachinesDirty=true;
+        m_impl->Notify("COLLECTED "+product.displayName+
+            (tailings.massKg>0.0f?" AND TAILINGS":""));
+        return true;
+    }
+
+    bool Renderer::DismantlePrimitiveMachine()
+    {
+        if(!HasPrimitiveMachineTarget())return false;
+        const auto* machine=m_impl->TracePrimitiveMachine(6.0f);
+        if(!machine)return false;
+        if(machine->feed.massKg>0.0f)
+        {
+            m_impl->Notify("COLLECT PROCESSED ORE FIRST");
+            return true;
+        }
+        const char* kit=machine->kind==PrimitiveMachineKind::Mill?
+            "hand_mill_kit":"sluice_kit";
+        PlayerInventory next=m_impl->inventory;
+        if(!next.AddItem(kit,1))
+        {
+            m_impl->Notify("INVENTORY FULL - CANNOT DISMANTLE");
+            return true;
+        }
+        if(!m_impl->processingMachines.Remove(machine->id))return true;
+        m_impl->inventory=std::move(next);
+        m_impl->processingMachinesDirty=true;
+        m_impl->Notify("PROCESSING MACHINE RECOVERED");
+        return true;
+    }
+
+    bool Renderer::PlaceOreCrusher()
+    {
+        if (!m_impl || !m_impl->initialized || m_impl->cinematicMode ||
+            m_impl->equippedItem != "ore_crusher_kit" ||
+            m_impl->inventory.ItemCount("ore_crusher_kit") == 0)
+            return false;
+        const auto pose=m_impl->ComputePlacementPose(Impl::PlacementKind::Crusher);
+        if (!pose.valid)
+        {
+            m_impl->Notify("CRUSHER NEEDS LEVEL, CLEAR GROUND");
+            return false;
+        }
+        if (!m_impl->crushers.Place(pose.x,pose.y,pose.z,m_impl->placementYaw))
+        {
+            m_impl->Notify("NOT ENOUGH ROOM FOR ANOTHER CRUSHER");
+            return false;
+        }
+        m_impl->inventory.RemoveItem("ore_crusher_kit",1);
+        m_impl->crushersDirty=true;
+        m_impl->Notify("EDGE-RUNNER PLACED | V ORE | E LOAD | HOLD R | T COLLECT");
+        return true;
+    }
+
+    bool Renderer::HasOreCrusherTarget() const
+    {
+        return m_impl && m_impl->initialized && !m_impl->cinematicMode &&
+            m_impl->TraceCrusher(6.0f) != nullptr;
+    }
+
+    bool Renderer::CycleCrusherOre()
+    {
+        if (!HasOreCrusherTarget())
+            return false;
+        const auto choices=m_impl->RawCrusherOreIndices();
+        if (choices.empty())
+        {
+            m_impl->Notify("NO RAW ORE IN INVENTORY");
+            return true;
+        }
+        m_impl->selectedCrusherOre=(m_impl->selectedCrusherOre+1)%choices.size();
+        const auto& selected=m_impl->inventory.OreBatches()[choices[m_impl->selectedCrusherOre]];
+        m_impl->Notify("CRUSHER ORE: "+selected.displayName+" | "+
+            std::to_string(static_cast<int>(selected.massKg))+" KG");
+        return true;
+    }
+
+    bool Renderer::LoadOreCrusher()
+    {
+        if (!HasOreCrusherTarget())
+            return false;
+        const auto* crusher=m_impl->TraceCrusher(6.0f);
+        if (!crusher)
+            return false;
+        if (crusher->batch.massKg>0.0f)
+        {
+            m_impl->Notify(crusher->batch.processingStage==OreProcessingStage::Crushed
+                ? "CRUSHED ORE READY - PRESS T TO COLLECT"
+                : "CRANK WITH R TO FINISH BEFORE LOADING NEW ORE");
+            return true;
+        }
+        const auto choices=m_impl->RawCrusherOreIndices();
+        if (choices.empty())
+        {
+            m_impl->Notify("NO RAW ORE TO CRUSH - GO MINING");
+            return true;
+        }
+        const auto index=choices[m_impl->selectedCrusherOre%choices.size()];
+        const auto& batch=m_impl->inventory.OreBatches()[index];
+        InventoryOreBatch charge=batch;
+        charge.massKg=std::min(batch.massKg,OreCrusherWorld::CapacityKg);
+        PlayerInventory updated=m_impl->inventory;
+        if (!updated.RemoveOre(index,charge.massKg))
+        {
+            m_impl->Notify("COULD NOT REMOVE ORE BATCH FROM INVENTORY");
+            return true;
+        }
+        if (!m_impl->crushers.Load(crusher->id,charge))
+        {
+            m_impl->Notify("CRUSHER CANNOT ACCEPT THIS ORE");
+            return true;
+        }
+        m_impl->inventory=std::move(updated);
+        m_impl->crushersDirty=true;
+        m_impl->crusherCrankCooldown=0.0f;
+        m_impl->Notify("LOADED "+std::to_string(static_cast<int>(charge.massKg))+
+            " KG "+charge.displayName+" | HOLD R TO CRANK");
+        return true;
+    }
+
+    bool Renderer::UpdateOreCrusherCrank(float deltaTime,bool crankHeld)
+    {
+        if (!m_impl || !m_impl->initialized || m_impl->cinematicMode ||
+            !crankHeld || m_impl->placement != Impl::PlacementKind::None)
+        {
+            if (m_impl) m_impl->crusherCrankCooldown=0.0f;
+            return false;
+        }
+        const auto* crusher=m_impl->TraceCrusher(6.0f);
+        if (!crusher)
+        {
+            m_impl->crusherCrankCooldown=0.0f;
+            return false;
+        }
+        m_impl->crusherCrankCooldown=std::max(0.0f,
+            m_impl->crusherCrankCooldown-std::clamp(deltaTime,0.0f,0.1f));
+        if (m_impl->crusherCrankCooldown>0.0f)
+            return true;
+        m_impl->crusherCrankCooldown=0.38f;
+        const bool processing=crusher->batch.massKg>0.0f &&
+            crusher->batch.processingStage==OreProcessingStage::Raw;
+        const auto id=crusher->id;
+        if (processing && m_impl->crushers.Crank(id))
+        {
+            m_impl->crushersDirty=true;
+            if (const auto* updated=m_impl->crushers.Find(id);
+                updated && updated->batch.processingStage==OreProcessingStage::Crushed)
+                m_impl->Notify("CRUSHING FINISHED | PRESS T TO COLLECT ORE");
+        }
+        return true;
+    }
+
+    bool Renderer::CollectOreCrusher()
+    {
+        if (!HasOreCrusherTarget())
+            return false;
+        const auto* crusher=m_impl->TraceCrusher(6.0f);
+        if (!crusher)
+            return false;
+        if (crusher->batch.processingStage!=OreProcessingStage::Crushed)
+        {
+            m_impl->Notify("CRUSHER HAS NO FINISHED ORE | HOLD R TO CRANK");
+            return true;
+        }
+        PlayerInventory updated=m_impl->inventory;
+        if (!updated.AddOre(crusher->batch))
+        {
+            m_impl->Notify("INVENTORY FULL - MAKE ROOM TO COLLECT CRUSHED ORE");
+            return true;
+        }
+        InventoryOreBatch output;
+        if (!m_impl->crushers.Collect(crusher->id,output))
+            return true;
+        m_impl->inventory=std::move(updated);
+        m_impl->crushersDirty=true;
+        m_impl->Notify("COLLECTED "+output.displayName+" | READY FOR GRINDING");
+        return true;
+    }
+
+    bool Renderer::DismantleOreCrusher()
+    {
+        if (!HasOreCrusherTarget())
+            return false;
+        const auto* crusher=m_impl->TraceCrusher(6.0f);
+        if (!crusher)
+            return false;
+        if (crusher->batch.massKg>0.0f)
+        {
+            m_impl->Notify("COLLECT ALL CRUSHED ORE BEFORE DISMANTLING");
+            return true;
+        }
+        PlayerInventory updated=m_impl->inventory;
+        if (!updated.AddItem("ore_crusher_kit",1))
+        {
+            m_impl->Notify("NEED INVENTORY ROOM FOR CRUSHER KIT");
+            return true;
+        }
+        if (!m_impl->crushers.Remove(crusher->id))
+            return true;
+        m_impl->inventory=std::move(updated);
+        m_impl->crushersDirty=true;
+        m_impl->Notify("PRIMITIVE ORE CRUSHER DISMANTLED");
+        return true;
     }
 
     bool Renderer::PlaceBuildStructure()
@@ -3479,7 +4111,13 @@ namespace industrial_frontier
                 const auto pose = m_impl->ComputePlacementPose(m_impl->placement);
                 state.hasTarget = true;
                 state.targetIsOre = true;
-                state.targetMaterial = m_impl->placement == Impl::PlacementKind::Furnace
+                state.targetMaterial = m_impl->placement == Impl::PlacementKind::Mill
+                    ? "HAND MILL PREVIEW" :
+                    m_impl->placement == Impl::PlacementKind::Sluice
+                    ? "RIVER SLUICE PREVIEW - FLOW REQUIRED" :
+                    m_impl->placement == Impl::PlacementKind::Crusher
+                    ? "EDGE-RUNNER CRUSHER PREVIEW" :
+                    m_impl->placement == Impl::PlacementKind::Furnace
                     ? "CLAY FURNACE PREVIEW" :
                     m_impl->placement == Impl::PlacementKind::Campfire
                     ? "CAMPFIRE PREVIEW" :
@@ -3490,6 +4128,74 @@ namespace industrial_frontier
                     " DEGREES";
                 state.miningActive = false;
                 state.miningFeedback.clear();
+                return true;
+            }
+            if (const auto* machine=m_impl->TracePrimitiveMachine(6.0f))
+            {
+                state.hasTarget=true;
+                state.targetIsOre=true;
+                state.miningActive=false;
+                state.miningFeedback.clear();
+                state.targetMaterial=machine->kind==PrimitiveMachineKind::Mill?
+                    "HAND-POWERED ORE MILL":"FLOW-POWERED RIVER SLUICE";
+                if(machine->feed.massKg>0.0f)
+                {
+                    const int percent=machine->workRequired>0.0f?
+                        static_cast<int>(100.0f*machine->workDone/machine->workRequired):0;
+                    const bool finished=PrimitiveProcessingMachines::OutputStage(
+                        machine->kind,machine->feed.processingStage);
+                    state.targetAssay=machine->feed.displayName+" | "+
+                        std::to_string(static_cast<int>(machine->feed.massKg))+" KG | "+
+                        std::to_string(percent)+"% | "+
+                        (finished?"T COLLECT":machine->kind==PrimitiveMachineKind::Mill?
+                        "HOLD R CRANK":"RIVER FLOW PROCESSING");
+                }
+                else
+                {
+                    const auto choices=m_impl->ProcessingOreIndices(machine->kind);
+                    state.targetAssay=machine->kind==PrimitiveMachineKind::Mill?
+                        "CRUSHED ORE | 25 KG MAX | E LOAD":"GROUND ORE | 20 KG MAX | E LOAD";
+                    if(!choices.empty())
+                    {
+                        const auto index=m_impl->selectedProcessingOre%choices.size();
+                        state.targetAssay+=" | V ["+std::to_string(index+1)+"/"+
+                            std::to_string(choices.size())+"] "+
+                            m_impl->inventory.OreBatches()[choices[index]].primaryMineralId;
+                    }
+                }
+                return true;
+            }
+            if (const auto* crusher=m_impl->TraceCrusher(6.0f))
+            {
+                state.hasTarget=true;
+                state.targetMaterial="PRIMITIVE EDGE-RUNNER CRUSHER";
+                state.targetIsOre=true;
+                state.miningActive=false;
+                state.miningFeedback.clear();
+                if (crusher->batch.massKg>0.0f)
+                {
+                    const auto& batch=crusher->batch;
+                    const int percent=crusher->workRequired>0.0f ?
+                        static_cast<int>(100.0f*crusher->workDone/crusher->workRequired) : 0;
+                    state.targetAssay=batch.displayName+" | "+
+                        std::to_string(static_cast<int>(batch.massKg))+" kg | "+
+                        std::to_string(percent)+"% | "+
+                        (batch.processingStage==OreProcessingStage::Crushed ?
+                        "T: COLLECT" : "HOLD R: CRANK");
+                }
+                else
+                {
+                    const auto options=m_impl->RawCrusherOreIndices();
+                    state.targetAssay="EMPTY | 30 KG MAX | E: LOAD";
+                    if (!options.empty())
+                    {
+                        const auto index=m_impl->selectedCrusherOre%options.size();
+                        std::string name=m_impl->inventory.OreBatches()[options[index]].displayName;
+                        if (name.size()>20) name.resize(20);
+                        state.targetAssay+=" | V ["+std::to_string(index+1)+"/"+
+                            std::to_string(options.size())+"] "+name;
+                    }
+                }
                 return true;
             }
             const auto* kiln = m_impl->TraceFurnace(6.0f);
@@ -3900,6 +4606,8 @@ namespace industrial_frontier
         save.campfires = m_impl->campfires.Fires();
         save.furnaces = m_impl->furnaces.Furnaces();
         save.structures = m_impl->constructions.Structures();
+        save.crushers = m_impl->crushers.Crushers();
+        save.processingMachines=m_impl->processingMachines.Machines();
         save.moldCoolingSeconds = m_impl->moldCoolingSeconds;
         save.inventory = m_impl->inventory.Capture();
         return true;
@@ -3931,6 +4639,10 @@ namespace industrial_frontier
         m_impl->campfires.Clear();
         m_impl->furnaces.Clear();
         m_impl->constructions.Clear();
+        m_impl->crushers.Clear();
+        m_impl->processingMachines.Clear();
+        m_impl->processingMachinesDirty=true;
+        m_impl->crushersDirty = true;
         m_impl->constructionsDirty = true;
         m_impl->moldCoolingSeconds=0.0f;
         m_impl->furnacePropsDirty=true;
@@ -3967,8 +4679,12 @@ namespace industrial_frontier
             save.collectedPebbles.end()};
         if (!m_impl->campfires.Restore(save.campfires) ||
             !m_impl->furnaces.Restore(save.furnaces) ||
-            !m_impl->constructions.Restore(save.structures))
+            !m_impl->constructions.Restore(save.structures) ||
+            !m_impl->crushers.Restore(save.crushers) ||
+            !m_impl->processingMachines.Restore(save.processingMachines))
             return false;
+        m_impl->crushersDirty=true;
+        m_impl->processingMachinesDirty=true;
         m_impl->moldCoolingSeconds=save.moldCoolingSeconds;
         m_impl->furnacePropsDirty=true;
         m_impl->furnaceParticlesDirty=true;
@@ -4059,6 +4775,8 @@ namespace industrial_frontier
         m_impl->UpdateCampfireMeshes();
         m_impl->UpdateFurnaceMeshes();
         m_impl->UpdateConstructionMeshes();
+        m_impl->UpdateCrusherMeshes();
+        m_impl->UpdateProcessingMachineMesh();
         m_impl->UpdatePreviewGeometry();
         m_impl->UpdateActiveCamera();
         if (m_impl->equippedItem=="hot_copper_mold" ||
@@ -4148,6 +4866,17 @@ namespace industrial_frontier
             );
         }
 
+        m_impl->riverShader.Use();
+        m_impl->riverShader.SetMat4("uMVP", mvp.values);
+        m_impl->riverShader.SetFloat("uTime",
+            static_cast<float>(SDL_GetTicks() % 600000u) * 0.001f);
+        for (const auto& entry : m_impl->riverChunks)
+        {
+            const Impl::GPUChunk& mesh = entry.second;
+            m_impl->BindVertexArray(mesh.vertexArray);
+            m_impl->DrawElements(GL_TRIANGLES, mesh.indexCount, GL_UNSIGNED_INT, nullptr);
+        }
+        m_impl->terrainShader.Use();
         for (const auto& entry : m_impl->forestChunks)
         {
             const Impl::GPUChunk& mesh = entry.second;
@@ -4167,7 +4896,8 @@ namespace industrial_frontier
                 GL_UNSIGNED_INT,nullptr);
         }
         for (const auto* mesh : {&m_impl->furnaceProps,
-            &m_impl->constructionProps,&m_impl->heldMold})
+            &m_impl->constructionProps,&m_impl->crusherProps,
+            &m_impl->processingMachineMesh,&m_impl->heldMold})
         {
             if (mesh->indexCount>0)
             {
@@ -4253,6 +4983,7 @@ namespace industrial_frontier
         m_impl->StopTerrainGeneration();
         m_impl->ClearGPUChunks();
         m_impl->terrainWorld.Clear();
+        m_impl->riverShader.Shutdown();
         m_impl->terrainShader.Shutdown();
         m_impl->campfireParticleShader.Shutdown();
 

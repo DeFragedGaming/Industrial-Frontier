@@ -14,7 +14,7 @@ namespace industrial_frontier
         std::uint16_t maximumDurability = 0;
     };
 
-    inline constexpr std::array<PrimitiveItemDefinition, 28> PrimitiveItems{{
+    inline constexpr std::array<PrimitiveItemDefinition, 31> PrimitiveItems{{
         {"stick", "Wooden Stick", 0.20f},
         {"pebble", "Loose Pebble", 0.35f},
         {"log", "Wood Log", 2.0f},
@@ -42,7 +42,10 @@ namespace industrial_frontier
         {"log_doorframe_kit", "Log Doorframe Kit", 5.0f},
         {"log_window_kit", "Log Window Wall Kit", 6.0f},
         {"log_roof_kit", "Log Roof Kit", 7.0f},
-        {"log_support_kit", "Log Support Kit", 4.0f}
+        {"log_support_kit", "Log Support Kit", 4.0f},
+        {"ore_crusher_kit", "Primitive Edge-Runner Crusher Kit", 22.0f},
+        {"hand_mill_kit", "Hand-Powered Ore Mill Kit", 16.0f},
+        {"sluice_kit", "Wooden River Sluice Kit", 12.0f}
     }};
 
     struct PrimitiveIngredient
@@ -61,7 +64,7 @@ namespace industrial_frontier
         std::size_t ingredientCount;
     };
 
-    inline constexpr std::array<PrimitiveRecipe, 17> PrimitiveRecipes{{
+    inline constexpr std::array<PrimitiveRecipe, 20> PrimitiveRecipes{{
         {"stone_axe_recipe", "Stone Axe", "stone_axe", 1,
             {{{"pebble", 2}, {"stick", 2}, {"", 0}, {"", 0}}}, 2},
         {"stone_pickaxe_recipe", "Stone Pickaxe", "stone_pickaxe", 1,
@@ -95,7 +98,13 @@ namespace industrial_frontier
         {"log_roof_recipe", "Log Roof", "log_roof_kit", 1,
             {{{"log", 6}, {"stick", 4}, {"", 0}, {"", 0}}}, 2},
         {"log_support_recipe", "Log Support", "log_support_kit", 1,
-            {{{"log", 3}, {"stick", 3}, {"", 0}, {"", 0}}}, 2}
+            {{{"log", 3}, {"stick", 3}, {"", 0}, {"", 0}}}, 2},
+        {"ore_crusher_recipe", "Primitive Edge-Runner Crusher", "ore_crusher_kit", 1,
+            {{{"raw_stone", 12}, {"log", 8}, {"stick", 8}, {"clay_soil", 4}}}, 4},
+        {"hand_mill_recipe", "Hand-Powered Ore Mill", "hand_mill_kit", 1,
+            {{{"raw_stone", 10}, {"log", 6}, {"stick", 8}, {"clay_soil", 2}}}, 4},
+        {"sluice_recipe", "Wooden River Sluice", "sluice_kit", 1,
+            {{{"log", 8}, {"stick", 10}, {"raw_stone", 4}, {"", 0}}}, 3}
     }};
 
     inline const PrimitiveItemDefinition* FindPrimitiveItem(std::string_view id)

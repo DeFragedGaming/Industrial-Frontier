@@ -110,6 +110,9 @@ add_executable(IndustrialFrontier
     src/resources/Campfire.cpp
     src/renderer/CampfireVisuals.cpp
     src/renderer/BuildStructureVisuals.cpp
+    src/renderer/OreCrusherVisuals.cpp
+    src/renderer/PrimitiveMachineVisuals.cpp
+    src/renderer/RiverVisuals.cpp
     src/resources/FieldGuideCatalog.cpp
     src/resources/OreProcessing.cpp
     src/ui/InventoryOverlay.cpp
@@ -497,3 +500,35 @@ target_include_directories(IndustrialFrontierCraftingLayoutTest PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include)
 add_test(NAME IndustrialFrontier_CraftingLayout
     COMMAND IndustrialFrontierCraftingLayoutTest)
+
+add_executable(IndustrialFrontierOreCrusherTest
+    tests/OreCrusherSmoke.cpp
+    src/resources/PlayerInventory.cpp
+    src/renderer/OreCrusherVisuals.cpp
+)
+target_include_directories(IndustrialFrontierOreCrusherTest PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include)
+add_test(NAME IndustrialFrontier_OreCrusher
+    COMMAND IndustrialFrontierOreCrusherTest)
+
+add_executable(IndustrialFrontierRiverMillSluiceTest
+    tests/RiverMillSluiceSmoke.cpp
+    src/resources/PlayerInventory.cpp
+    src/world/TerrainGenerator.cpp
+    src/renderer/PrimitiveMachineVisuals.cpp
+    src/renderer/RiverVisuals.cpp
+)
+target_include_directories(IndustrialFrontierRiverMillSluiceTest PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include)
+add_test(NAME IndustrialFrontier_RiverMillSluice
+    COMMAND IndustrialFrontierRiverMillSluiceTest)
+
+add_executable(IndustrialFrontierRiverNetworkTest
+    tests/RiverNetworkSmoke.cpp
+    src/world/TerrainGenerator.cpp
+    src/renderer/RiverVisuals.cpp
+)
+target_include_directories(IndustrialFrontierRiverNetworkTest PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include)
+add_test(NAME IndustrialFrontier_RiverNetwork
+    COMMAND IndustrialFrontierRiverNetworkTest)

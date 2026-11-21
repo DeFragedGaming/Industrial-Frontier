@@ -53,6 +53,10 @@ namespace industrial_frontier
         const TerrainSettings& GetSettings() const;
 
         float GetHeight(float worldX, float worldZ) const;
+        float GetNaturalHeight(float worldX, float worldZ) const;
+        float GetRiverSurfaceHeight(float worldX, float worldZ) const;
+        bool GetRiverWater(float x, float z, float& surfaceY,
+            float& flowX, float& flowZ, float& speed) const;
 
     private:
         TerrainSettings m_settings;

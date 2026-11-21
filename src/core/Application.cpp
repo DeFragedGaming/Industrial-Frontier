@@ -1006,13 +1006,18 @@ namespace industrial_frontier
                     }
                     if (key == SDL_SCANCODE_R)
                     {
+                        if (m_renderer.HasOreCrusherTarget() ||
+                            m_renderer.HasPrimitiveMachineTarget())
+                            break;
                         if (!m_renderer.FuelClayFurnace())
                             m_renderer.CollectCampfireCharcoal();
                         break;
                     }
                     if (key == SDL_SCANCODE_X)
                     {
-                        if (!m_renderer.DismantleBuildStructureAtCrosshair() &&
+                        if (!m_renderer.DismantlePrimitiveMachine() &&
+                            !m_renderer.DismantleOreCrusher() &&
+                            !m_renderer.DismantleBuildStructureAtCrosshair() &&
                             !m_renderer.DismantleClayFurnaceAtCrosshair() &&
                             !m_renderer.DismantleCampfireAtCrosshair())
                             m_renderer.ReportNoDismantleTarget();
@@ -1025,17 +1030,23 @@ namespace industrial_frontier
                     }
                     if (key == SDL_SCANCODE_V)
                     {
-                        m_renderer.CycleFurnaceOre();
+                        if (!m_renderer.CyclePrimitiveMachineOre() &&
+                            !m_renderer.CycleCrusherOre())
+                            m_renderer.CycleFurnaceOre();
                         break;
                     }
                     if (key == SDL_SCANCODE_T)
                     {
-                        m_renderer.CollectCooledCopper();
+                        if (!m_renderer.CollectPrimitiveMachine() &&
+                            !m_renderer.CollectOreCrusher())
+                            m_renderer.CollectCooledCopper();
                         break;
                     }
                     if (key == SDL_SCANCODE_E)
                     {
-                        if (!m_renderer.InteractClayFurnace() &&
+                        if (!m_renderer.LoadPrimitiveMachine() &&
+                            !m_renderer.LoadOreCrusher() &&
+                            !m_renderer.InteractClayFurnace() &&
                             !m_renderer.InteractCampfire())
                             m_renderer.GatherTarget();
                         break;
@@ -1668,6 +1679,15 @@ namespace industrial_frontier
 
                     m_renderer.UpdateOreMining(deltaTime);
                     m_renderer.UpdateTreeHarvest(deltaTime);
+                    m_renderer.UpdateOreCrusherCrank(deltaTime,
+                        m_mouseCaptured && keyboardState[SDL_SCANCODE_R]);
+                    m_renderer.UpdatePrimitiveMachines(deltaTime,
+                        m_mouseCaptured && keyboardState[SDL_SCANCODE_R]);
+                }
+                else
+                {
+                    m_renderer.UpdateOreCrusherCrank(deltaTime,false);
+                    m_renderer.UpdatePrimitiveMachines(deltaTime,false);
                 }
             }
             else
