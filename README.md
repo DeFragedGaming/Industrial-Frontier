@@ -1,174 +1,229 @@
-# Industrial Frontier
+<div align="center">
 
-**A Native C++ Mining, Exploration, and Industrial Automation Simulation**
+# INDUSTRIAL FRONTIER
 
-**Build. Mine. Process. Automate. Expand.**
+### Build. Mine. Process. Automate. Expand.
 
-Industrial Frontier is a 3D mining, exploration, and industrial automation game being developed by **CyberTrace Studios** using native C++20, SDL3, OpenGL, and CMake.
+**A procedural 3D mining, survival, and industrial simulation built with a custom C++ engine.**
 
-The long-term goal is to create an explorable, physically modifiable world where players discover resources, establish mining operations, construct industrial facilities, and connect increasingly complex production systems.
+[![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C?style=for-the-badge&logo=cplusplus&logoColor=white)](https://en.cppreference.com/w/cpp/20)
+[![SDL3](https://img.shields.io/badge/SDL-3-284C72?style=for-the-badge)](https://www.libsdl.org/)
+[![OpenGL](https://img.shields.io/badge/OpenGL-3.3-5586A4?style=for-the-badge&logo=opengl&logoColor=white)](https://www.opengl.org/)
+[![CMake](https://img.shields.io/badge/CMake-3.25%2B-064F8C?style=for-the-badge&logo=cmake&logoColor=white)](https://cmake.org/)
 
-The current **Showcase v5** focuses on procedural terrain, interactive excavation, underground movement, and the technical foundation for future mining and automation gameplay. The industrial systems described in the roadmap are **planned**, not yet playable.
+**Current milestone: Stage 10H-2 — Primitive Machinery, Rivers & Mineral Separation**
 
-## Gameplay Preview
+[Play on itch.io](https://cybertrace.itch.io/industrial-frontier) · [Releases](https://github.com/DeFragedGaming/Industrial-Frontier/releases) · [Linux Builds](https://github.com/DeFragedGaming/Industrial-Frontier/actions) · [Source Code](https://github.com/DeFragedGaming/Industrial-Frontier)
 
-![Industrial Frontier - Early Free-Fly Camera Preview](assets/Videos/FreFlyCam.gif)
+*Developed by CyberTrace Studios*
 
-![Industrial Frontier - Early Procedural Terrain](assets/Pics/TerrainBase.png)
+</div>
 
-*Early development footage and screenshots. These previews show earlier terrain and camera prototypes, not necessarily the latest Showcase v5 visuals.*
+---
 
-## Showcase v5 — Below the Surface
+## About the game
 
-Showcase v5 is a major transition from a heightmap-only landscape to **volumetric, diggable 3D terrain**.
+**Industrial Frontier** is a work-in-progress mining and industrial simulation where the world is more than a backdrop. You can explore procedurally generated landscapes, excavate the ground, gather materials, process real minerals, craft tools, and build the beginnings of a mining operation.
 
-### What's implemented
+The aim is to start with primitive equipment and work toward increasingly capable machinery. Before there are conveyors and automated factories, there are stone tools, charcoal, clay furnaces, hand cranks, and rivers that can help separate valuable minerals from waste.
 
-- **Procedural landscapes:** Mountains, hills, valleys, canyons, and traversable terrain generated from a world seed.
-- **Volumetric voxel density:** Represents solid ground and empty space beneath the surface.
-- **Smooth voxel meshing:** Marching Tetrahedra produces terrain floors, walls, ceilings, and excavation surfaces.
-- **Interactive digging:** Aim at terrain and left-click to excavate rounded holes and connected tunnels.
-- **Chunk-based terrain streaming:** Generates terrain in the background and updates affected chunks after excavation.
-- **Underground player collision:** Supports landing on excavated floors and interacting with underground walls and ceilings.
-- **First-person exploration:** WASD movement, mouse look, sprinting, and jumping.
-- **Main menu and introduction:** Existing menu, cinematic camera, and introduction flow remain part of the game.
-- **Windows and Linux builds:** The project builds natively on Windows and Linux, with automated Linux builds through GitHub Actions.
+Instead of using Unity or Unreal Engine, the project runs on a **custom, purpose-built C++20 engine**, with **SDL3** for windowing and input, **OpenGL 3.3** for 3D rendering, and **CMake** for cross-platform builds.
 
-### Showcase v5 development stages
+> **Development status:** This is an early playable showcase, not a finished survival or automation game. The features under *Implemented* below exist in the current development code; they are still being tested and refined.
 
-| Stage | Feature | Status |
-| --- | --- | --- |
-| 1 | Voxel density system | Implemented |
-| 2 | Smooth 3D voxel meshing | Implemented |
-| 3 | Voxel terrain rendering | Implemented |
-| 4 | Interactive terrain digging | Implemented |
-| 4 hotfix | Excavation surface visibility | Fixed |
-| 5 | Underground player collision | Implemented; further testing and refinement planned |
-| 6 | Excavation persistence | Planned |
-| 7 | Terrain streaming optimization | Planned |
-| 8 | Rare procedural deep caves | Planned |
-| 9 | Gameplay HUD and centered crosshair | Planned |
+## Gameplay previews
 
-## Gameplay Vision
+![Early Industrial Frontier free-fly camera preview](assets/Videos/FreFlyCam.gif)
 
-Industrial Frontier is designed to grow from hands-on exploration and mining into a larger industrial simulation. Planned features include:
+![Early procedural terrain prototype](assets/Pics/TerrainBase.png)
 
-- Discoverable ores, minerals, and other natural resources.
-- Resource collection, storage, and inventory management.
-- Ore crushing, smelting, refining, and processing.
-- Conveyor belts and automated material transport.
-- Industrial machinery and interconnected production chains.
-- Electrical generation and power distribution.
-- Facility construction and infrastructure expansion.
-- Research, upgrades, and technological progression.
-- Machine maintenance, equipment failures, and operational management.
-- Persistent world saves and loading.
-- Rare deep cave systems accessed through navigable, sloping passages into larger chambers.
+*These are archival previews from earlier builds. The current game has additional mining, crafting, structures, rivers, and ore-processing machinery not shown here.*
 
-**These are development goals.** Many are not included in Showcase v5.
+## Implemented systems
 
-## Technology
+| System | Current capabilities |
+| :-- | :-- |
+| **Procedural world** | Seed-based mountains, valleys, hills, forests, geology, and streamed terrain chunks |
+| **Volumetric terrain** | Smooth 3D voxel meshing, terrain excavation, tunnels, underground surfaces, and collision |
+| **Rivers and lakes** | Winding river networks, connected tributaries, side channels, carved banks, lakes, and animated directional current |
+| **Mining and geology** | Real mineral identities, varying ore grades and compositions, tool-based mining requirements, and resource collection |
+| **Survival crafting** | Harvesting, primitive tools, charcoal, campfires, tool durability, and a category-based crafting interface |
+| **Metallurgy** | Clay furnace, compatible early metal smelting, reusable multi-ingot casting, and copper tools |
+| **Ore-processing machinery** | Hand-cranked edge-runner crusher, hand-powered grinding mill, and flow-driven river sluice |
+| **Inventory and storage** | Hotbar, draggable inventory items, weight limits, starter storage, placeable wooden chests, and stack transfers |
+| **Construction** | Snapping log foundations, walls, doorframes, window walls, roof pieces, and supports with previews and collision |
+| **Persistence and guides** | World and gameplay save/load, stored machine progress, and an in-game Field Guide |
 
-| Component | Technology |
-| --- | --- |
-| Language | C++20 |
-| Build system | CMake (3.25 or newer) |
-| Windowing, events, and input | SDL3 |
-| Graphics | OpenGL 3.3 Core Profile |
-| Terrain | Procedural noise, volumetric density, Marching Tetrahedra |
-| World generation | Asynchronous, chunk-based streaming |
-| Development environment | Visual Studio Code / Windows 11 |
-| Windows compiler | MSVC |
-| Linux compiler | GCC or Clang |
-| Linux continuous integration | GitHub Actions (Ubuntu 24.04) |
+### Mining with real minerals
 
-SDL3 is fetched during CMake configuration through the project's `FetchContent` setup.
+Mineral deposits aren't simply labeled “copper ore” or “iron ore.” The game's geology and processing systems distinguish minerals such as **Malachite, Azurite, Cuprite, Chalcopyrite, Bornite, Cassiterite, Cerussite, and Hematite**. Composition and material properties matter, and tools restrict what can be mined at different progression tiers.
+
+### Primitive machinery: Stage 10H
+
+The first physical processing machines are now part of the world:
+
+1. **Edge-runner ore crusher:** Load up to **30 kg** of raw ore and operate a rolling stone wheel by hand to produce crushed ore.
+2. **Hand-powered ore mill:** Grind up to **25 kg** of crushed ore into ground material.
+3. **River sluice:** Place a wooden sluice in suitable moving water and process up to **20 kg** of ground ore into **concentrate and tailings**.
+
+These machines use crafted placement kits, procedural 3D geometry, player interaction, collision, and persistent state. Ore batches keep their mineral information as they move through processing.
+
+Water has directional flow data that affects sluice operation. **It is not yet a full fluid-physics simulation**; visible currents are animated with shaders.
+
+### Procedural, not preassembled
+
+Industrial Frontier's terrain, geology, river networks, forests, and many of its machines and structures are generated through code. The world is deterministic from its seed, while excavation and construction allow players to change it. Interface icons and other artwork are handled separately; not every visual asset is procedurally generated.
+
+## Development roadmap
+
+| Milestone | Focus | Status |
+| :-- | :-- | :-- |
+| **Showcase v5** | Volumetric terrain, excavation, underground collision, world streaming | Implemented foundations; ongoing refinement |
+| **Stage 10A–10E** | Geological systems, mining, mineral data, early processing and Field Guide | Implemented |
+| **Stage 10F** | Primitive tools, harvesting, inventory, crafting, campfires and charcoal | Implemented |
+| **Stage 10G / Part One** | Clay furnace, casting, copper equipment, storage, and log construction | Implemented |
+| **Stage 10H-1** | Primitive edge-runner ore crusher | Implemented |
+| **Stage 10H-2 / Part Two** | Hand-powered mill, sluice, river networks, tributaries, lakes, and flowing-water visuals | Implemented; in-game tuning ongoing |
+| **Stage 10H-3 / Part Three** | Ore roasting, improved furnaces, forging, alloys, bronze and iron progression | **Planned** |
+| **Later Stage 10H** | Mechanical power, conveyors, transport, and connected automation | **Planned** |
+| **Stage 10I** | Integration, optimization, stability, and further polish | **Planned** |
+
+Longer-term goals include expanded underground exploration, improved mineral recovery, more demanding mining equipment, industrial-scale facilities, power generation, machine maintenance, and automated production lines.
 
 ## Controls
 
+Controls vary by interaction and the currently open menu. The **Field Guide (`G`)** provides in-game help.
+
 | Input | Action |
-| --- | --- |
+| :-- | :-- |
 | `W` / `A` / `S` / `D` | Move |
-| Mouse | Look around |
-| Left mouse button | Dig terrain (during gameplay) |
+| Mouse | Look around / aim |
 | `Shift` | Sprint |
 | `Space` | Jump |
-| `Escape` | Pause / resume |
+| Left mouse button | Excavation / context-sensitive interaction |
+| `1`–`8` | Select hotbar slot |
+| `I` | Inventory |
+| `B` | Storage or targeted wooden chest |
+| `C` | Crafting menu |
+| `P` | Ore-processing menu |
+| `G` | Field Guide |
+| `F` | Start / confirm placement preview with an equipped kit |
+| `Q` / `R` | Rotate placement preview |
+| `V` | Cycle compatible ore batches while targeting a machine |
+| `E` | Gather, interact, or load a targeted machine |
+| Hold `R` | Operate a loaded hand-cranked crusher or mill |
+| `T` | Collect processed machine output or cooled ingots |
+| `X` | Dismantle a suitable empty structure or machine |
+| `F3` | Toggle additional HUD details |
+| `F5` / `F9` | Open save / load interface |
+| `Escape` | Pause, back, or close the current interface |
 
-A centered crosshair and expanded gameplay HUD are planned for Stage 9.
+In the crafting menu, use **Left/Right** for categories, **Up/Down** for recipes, **Page Up/Down** to browse, and **Enter** to craft. Mouse selection is also supported.
 
-## Downloads and Builds
+## Technology
 
-Prebuilt packages are produced separately for Windows and Linux:
+| Area | Stack |
+| :-- | :-- |
+| Language | C++20 |
+| Custom engine | Purpose-built game loop, renderer, terrain, movement, UI, gameplay, and persistence |
+| Windowing and input | SDL3 |
+| UI text | SDL3_ttf |
+| 3D graphics | OpenGL 3.3 Core Profile and GLSL shaders |
+| Terrain | Seeded noise, volumetric density fields, and Marching Tetrahedra |
+| Streaming | Asynchronous chunk generation and mesh uploads |
+| Build system | CMake 3.25+; Visual Studio/MSVC on Windows; GCC or Clang on Linux |
+| Linux CI | GitHub Actions on Ubuntu 24.04 |
 
-- **Windows x64:** `IndustrialFrontier-v5-Windows-x64.zip`
-- **Linux x64:** `IndustrialFrontier-v5-Linux-x64.tar.gz`
+SDL3 and related dependencies are obtained through the project's CMake configuration. Initial configuration may require an internet connection.
 
-Check the [GitHub Releases page](https://github.com/DeFragedGaming/Industrial-Frontier/releases) for published release files and the [GitHub Actions page](https://github.com/DeFragedGaming/Industrial-Frontier/actions) for automated Linux build artifacts. GitHub Actions downloads may contain the Linux `.tar.gz` inside an artifact ZIP.
+## Download development builds
 
-### Build on Windows
+Check [**GitHub Releases**](https://github.com/DeFragedGaming/Industrial-Frontier/releases) for published versions and [**GitHub Actions**](https://github.com/DeFragedGaming/Industrial-Frontier/actions) for recent Linux build artifacts.
 
-Requirements: Windows 10/11, a C++20-capable MSVC toolchain, CMake, and OpenGL development support.
+- **Windows x64:** Distributed as a ZIP containing `IndustrialFrontier.exe`, DLLs, and `assets/`. Extract it before running the game.
+- **Linux x64:** The permanent CI workflow produces an artifact named `IndustrialFrontier-Linux-x64`, containing `IndustrialFrontier-Linux-x64.tar.gz` and a checksum. GitHub may wrap the archive in an additional artifact ZIP.
 
-From the project root in PowerShell:
+Development packages are not guaranteed to be available for every commit, and Linux compatibility outside the CI environment is still being evaluated.
+
+## Build from source
+
+### Windows
+
+**Requirements:** Windows 10/11, MSVC with C++20 support, CMake 3.25+, and OpenGL support.
+
+Run in PowerShell at the repository root:
 
 ```powershell
 cmake -S . -B build
 cmake --build build --config Release
+ctest --test-dir build -C Release --output-on-failure
 .\build\Release\IndustrialFrontier.exe
 ```
 
-The build copies required assets and the SDL3 runtime alongside the executable.
+### Linux
 
-### Build on Linux
-
-Requirements: a C++20 compiler, CMake, Ninja, OpenGL development libraries, and SDL3's Linux build dependencies. The [Linux GitHub Actions workflow](.github/workflows/linux-build.yml) contains the dependency list used for the automated Ubuntu 24.04 build.
-
-From the project root:
+**Requirements:** A C++20 compiler, CMake 3.25+, Ninja, OpenGL development libraries, and SDL3's platform dependencies. The [Linux CI workflow](.github/workflows/linux-build.yml) lists the packages used on Ubuntu 24.04.
 
 ```bash
 cmake -S . -B build-linux -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build-linux --parallel
+cmake --build build-linux --parallel 4
+ctest --test-dir build-linux --output-on-failure
 ./build-linux/IndustrialFrontier
 ```
 
-To run the packaged Linux build:
+To generate the reusable Linux distribution archive:
 
 ```bash
-tar -xzf IndustrialFrontier-v5-Linux-x64.tar.gz
-cd IndustrialFrontier-v5-Linux-x64
+bash tools/linux/package.sh build-linux dist
+```
+
+To extract and launch the packaged Linux build:
+
+```bash
+cd ~/Downloads
+tar -xzf IndustrialFrontier-Linux-x64.tar.gz
+cd IndustrialFrontier-Linux-x64
+chmod +x run.sh IndustrialFrontier
 ./run.sh
 ```
 
-The included `run.sh` sets the library search path for the bundled SDL3 runtime and launches the game with the correct working directory. On Ubuntu, the OpenGL runtime package `libopengl0` may be necessary if it is not already installed.
+The packaged launcher sets the library path for its bundled SDL3 runtime. Other system libraries, GPU drivers, and OpenGL support are still required.
 
-**Linux note:** The Linux executable has been launched and gameplay-tested under Ubuntu 24.04 through WSL2. Performance under WSL2 software rendering may differ substantially from a native Linux desktop with GPU acceleration. Broader Linux distribution testing is ongoing.
+## Automated builds and testing
 
-## Known Limitations
+The [Linux workflow](.github/workflows/linux-build.yml) is designed to be **stage-independent**. It builds and tests new commits to `main` and pull requests, then packages a consistent `IndustrialFrontier-Linux-x64` archive. Future gameplay milestones should not need a renamed workflow or packaging script.
 
-Industrial Frontier is an early development showcase. Current limitations include:
+Automated regression tests cover multiple systems, including geology, inventories, ore processing, machinery, placement, collision, and saved state. **A configured workflow does not guarantee every commit passes**; consult [Actions](https://github.com/DeFragedGaming/Industrial-Frontier/actions) for the latest result.
 
-- Excavation edits do **not yet persist** between game sessions.
-- Rapid movement may briefly expose unloaded terrain while chunks stream in.
-- Terrain-generation and mesh-rebuilding performance still need optimization.
-- Procedural natural cave systems and the gameplay crosshair are planned, not yet implemented.
-- Mining resources, ore processing, automation, power systems, and full industrial gameplay remain future work.
+## Current limitations
 
-## Project Goals
+- The game is in active development; visuals, controls, progression, and saves may change.
+- Rivers use generated surfaces and flow fields rather than fully simulated water; swimming, fluid dynamics, and advanced erosion are not implemented.
+- River generation may alter the terrain layout of existing seeded worlds. **Back up save files before testing world-generation updates.**
+- Terrain streaming and mesh rebuilding need continued performance work, especially on integrated graphics.
+- Underground cave generation and traversal still need further refinement and broader playtesting.
+- High-tier metallurgy, powered machinery, conveyors, electricity, and complete industrial automation are future development work.
+- Windows and Linux builds should be tested independently; behavior may differ across drivers and hardware.
 
-- A seamless-feeling world that can be explored and physically modified.
-- Accessible slopes and navigable underground spaces rather than inaccessible vertical surfaces everywhere.
-- Meaningful resource discovery, extraction, and processing.
-- Industrial systems that influence one another through logistics and production.
-- A modular native C++ foundation that can grow over time.
-- Continued support for both Windows and Linux.
+## Contributing and following development
 
-## Development and Source Code
+Industrial Frontier is a solo development project by **CyberTrace Studios**. Source code, build configurations, tests, and development history are available in this repository.
 
-Industrial Frontier is developed by **CyberTrace Studios**. The repository contains the game's evolving source code, assets, and build configuration.
+- [Download and follow on itch.io](https://cybertrace.itch.io/industrial-frontier)
+- [Repository](https://github.com/DeFragedGaming/Industrial-Frontier)
+- [Releases](https://github.com/DeFragedGaming/Industrial-Frontier/releases)
+- [Builds and tests](https://github.com/DeFragedGaming/Industrial-Frontier/actions)
 
-Follow development, inspect the code, and track future updates here:
+Bug reports and reproducible build failures are helpful. When reporting an issue, include your operating system, steps to reproduce, and relevant logs.
 
-**[Industrial Frontier on GitHub](https://github.com/DeFragedGaming/Industrial-Frontier)**
+---
 
-*Industrial Frontier is a work in progress. Features, performance, visuals, and systems may change during development.*
+<div align="center">
+
+**Build. Mine. Process. Automate. Expand.**
+
+*Industrial Frontier is a work in progress. Everything here is subject to further testing and change.*
+
+**CyberTrace Studios**
+
+</div>
